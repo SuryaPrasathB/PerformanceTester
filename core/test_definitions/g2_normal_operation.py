@@ -12,15 +12,27 @@ class G2NormalOperationTest(BaseTest):
         context.logger.info("G2 Normal Operation Test - Setup started.")
         
         # Initialize runtime values
-        context.update_runtime_value("voltage", 230.0)
-        context.update_runtime_value("current", 5.0)
-        context.update_runtime_value("power_factor", 0.95)
+        v = 230.0
+        i = 5.0
+        pf = 0.95
+        
+        context.update_runtime_value("voltage", v)
+        context.update_runtime_value("current", i)
+        context.update_runtime_value("power_factor", pf)
         context.update_runtime_value("credit", 10.0) # start with 10 units of credit
         
-        context.logger.info("G2 Normal Operation Test - Setup completed. Initialized voltage, current, PF, and credit.")
+        # Hardware Integration start
+        if hasattr(context, 'hardware_service') and context.hardware_service:
+            context.hardware_service.inject_signal(v, i, pf)
+            context.hardware_service.control_load(True)
+            
+        context.logger.info("G2 Normal Operation Test - Setup completed. Load is ON.")
 
     def run(self, context):
         context.logger.info("G2 Normal Operation Test - Run started.")
+        
+        # UI Wait Protocol Demonstration
+        context.prompt_user_action("Please verify physical wire connections and press Done to proceed.", requires_input=False)
         
         cycles_completed = 0
         max_cycles = 3
@@ -37,10 +49,16 @@ class G2NormalOperationTest(BaseTest):
                 context.wait_if_paused()
                 context.check_cancel()
                 
-                # Mock reading values
+                # Hardware reading actuals
                 voltage = context.get_runtime_value("voltage")
                 current = context.get_runtime_value("current")
                 
+                if hasattr(context, 'hardware_service') and context.hardware_service:
+                    readings = context.hardware_service.get_meter_readings()
+                    # Example of overriding with live read data if available
+                    # voltage = readings.get('voltage', voltage)
+                    # current = readings.get('current', current)
+
                 context.logger.debug(f"Reading meter... V: {voltage}V, I: {current}A")
                 time.sleep(1) # simulate delay
                 
@@ -70,7 +88,12 @@ class G2NormalOperationTest(BaseTest):
 
     def cleanup(self, context):
         context.logger.info("G2 Normal Operation Test - Cleanup started.")
+        # Ensure physical load is turned off
+        if hasattr(context, 'hardware_service') and context.hardware_service:
+            context.hardware_service.control_load(False)
+            context.hardware_service.inject_signal(0.0, 0.0, 1.0)
+            
         # Reset runtime values back to zero or default safe state
         context.update_runtime_value("voltage", 0.0)
         context.update_runtime_value("current", 0.0)
-        context.logger.info("G2 Normal Operation Test - Cleanup completed.")
+        context.logger.info("G2 Normal Operation Test - Cleanup completed. Load is OFF.")

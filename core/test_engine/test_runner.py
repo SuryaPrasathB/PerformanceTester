@@ -17,11 +17,13 @@ class TestRunner(QThread):
     on_state_changed = Signal(str)
     on_log = Signal(str, str) # level, message
     on_data_update = Signal(dict)
+    on_user_action_required = Signal(str, bool)
     
     def __init__(self, test_instance: BaseTest, context: TestContext):
         super().__init__()
         self.test = test_instance
         self.context = context
+        self.context._prompt_callback = self._emit_prompt
         self.state_machine = StateMachine()
         
         # Override the context logger with a custom one that emits to the UI
@@ -79,9 +81,14 @@ class TestRunner(QThread):
             # periodically between test calls. A simple approach: start a timer thread.
             
             # 2. RUNNING
+            # Safety Pre-Check before transitioning
+            if hasattr(self.context, 'safety_manager') and self.context.safety_manager:
+                if not self.context.safety_manager.pre_check(self.context):
+                    raise Exception("Safety Pre-Check failed. Aborting test.")
+            
             self.set_state(TestState.RUNNING)
             
-            # Start data emitter
+            # Start data emitter and live monitor
             import threading
             self.emitter_thread = threading.Thread(target=self._emit_data_loop, daemon=True)
             self.emitter_thread.start()
@@ -103,6 +110,11 @@ class TestRunner(QThread):
                 self.logger.error(f"Test Error: {str(e)}")
                 self.logger.error(traceback.format_exc())
             
+            # Trigger hardware-level emergency stop on error
+            if hasattr(self.context, 'hardware_service') and self.context.hardware_service:
+                self.logger.warning("Triggering Hardware Emergency Stop due to test error!")
+                self.context.hardware_service.trigger_emergency_stop()
+                
             try:
                 self.set_state(TestState.ERROR)
             except Exception as transition_error:
@@ -126,9 +138,17 @@ class TestRunner(QThread):
                 pass
 
     def _emit_data_loop(self):
-        """Continuously emits the context's runtime values while test runs."""
+        """Continuously emits the context's runtime values while test runs and monitors safety."""
         while self._is_running:
             try:
+                # 1. Live Safety Monitor
+                if hasattr(self.context, 'safety_manager') and self.context.safety_manager:
+                    is_safe = self.context.safety_manager.monitor_live(self.context)
+                    if not is_safe:
+                        self.logger.critical("Live Monitor reported unsafe conditions! Cancelling test.")
+                        self.cancel() # Break the main test thread
+                        
+                # 2. Update Data
                 # Copy the dict to avoid race conditions
                 current_data = dict(self.context.runtime_values)
                 self.on_data_update.emit(current_data)
@@ -149,6 +169,15 @@ class TestRunner(QThread):
             self.context.pause_event.set()
             self.set_state(TestState.RUNNING)
             self.logger.info("Test resumed.")
+
+    def _emit_prompt(self, msg: str, req_input: bool):
+        """Helper to safely emit the user prompt from test context."""
+        self.on_user_action_required.emit(msg, req_input)
+        
+    def resume_from_user(self, user_input: str):
+        """Called by UI when user finishes interaction."""
+        self.context.user_input_result = user_input
+        self.context.user_action_event.set()
 
     def cancel(self):
         """Cancels test execution."""

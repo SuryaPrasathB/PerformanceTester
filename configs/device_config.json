@@ -4,21 +4,45 @@
       "name": "EnergyMeter1",
       "type": "dlms",
       "port": "COM3",
-      "mock": true
+      "mock": false
     },
     {
       "name": "PLC1",
       "type": "modbus",
-      "ip": "192.168.1.10",
+      "ip": "192.168.0.106",
       "port": 502,
-      "mock": true
+      "mock": false
     },
     {
       "name": "Sensor1",
       "type": "serial",
       "port": "COM4",
       "baudrate": 9600,
-      "mock": true
+      "mock": false
+    },
+    {
+      "name": "PicoScope1",
+      "type": "picoscope",
+      "port": "USB",
+      "mock": false
     }
-  ]
+  ],
+  "plc": {
+    "ip": "192.168.0.106",
+    "coils": {
+      "relay_main": 0,
+      "fault_trigger": 1,
+      "load_on": 2
+    },
+    "registers": {
+      "voltage_monitor": 10,
+      "current_monitor": 11
+    }
+  },
+  "safety": {
+    "max_voltage_v": 250.0,
+    "max_current_a": 10.0,
+    "min_voltage_v": 0.0,
+    "min_current_a": 0.0
+  }
 }

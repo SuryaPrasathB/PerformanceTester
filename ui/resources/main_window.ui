@@ -1,0 +1,271 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>MainWindow</class>
+ <widget class="QMainWindow" name="MainWindow">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>1100</width>
+    <height>800</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>Energy Meter Test System</string>
+  </property>
+  <widget class="QWidget" name="centralwidget">
+   <layout class="QVBoxLayout" name="verticalLayout">
+    <!-- Header -->
+    <item>
+     <layout class="QHBoxLayout" name="header_layout">
+      <item>
+       <widget class="QLabel" name="lbl_title">
+        <property name="text">
+         <string>Meter Test System v2.0</string>
+        </property>
+        <property name="objectName">
+         <string>lbl_title</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <spacer name="horizontalSpacer">
+        <property name="orientation">
+         <enum>Qt::Horizontal</enum>
+        </property>
+        <property name="sizeHint" stdset="0">
+         <size>
+          <width>40</width>
+          <height>20</height>
+         </size>
+        </property>
+       </spacer>
+      </item>
+      <item>
+       <widget class="QLabel" name="lbl_hw_status">
+        <property name="text">
+         <string>HW Status: OK</string>
+        </property>
+        <property name="objectName">
+         <string>lbl_hw_status</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QPushButton" name="btn_toggle_theme">
+        <property name="text">
+         <string>Toggle Theme</string>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </item>
+    
+    <!-- Body -->
+    <item>
+     <widget class="QSplitter" name="splitter_main">
+      <property name="orientation">
+       <enum>Qt::Horizontal</enum>
+      </property>
+      
+      <!-- Left Panel -->
+      <widget class="QWidget" name="left_panel">
+       <layout class="QVBoxLayout" name="verticalLayout_2">
+        <item>
+         <widget class="QLabel" name="label_1">
+          <property name="text">
+           <string>Test Selection</string>
+          </property>
+          <property name="objectName">
+           <string>section_title</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QListWidget" name="list_tests"/>
+        </item>
+        <item>
+         <widget class="QLabel" name="label_device">
+          <property name="text">
+           <string>Devices Status:</string>
+          </property>
+          <property name="objectName">
+           <string>section_title</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QTableWidget" name="table_devices"/>
+        </item>
+       </layout>
+      </widget>
+      
+      <!-- Center Panel -->
+      <widget class="QWidget" name="center_panel">
+       <layout class="QVBoxLayout" name="verticalLayout_3">
+        <item>
+         <widget class="QLabel" name="label_2">
+          <property name="text">
+           <string>Progress &amp; Instructions</string>
+          </property>
+          <property name="alignment">
+           <set>Qt::AlignCenter</set>
+          </property>
+          <property name="objectName">
+           <string>section_title</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <spacer name="verticalSpacerTop">
+          <property name="orientation">
+           <enum>Qt::Vertical</enum>
+          </property>
+         </spacer>
+        </item>
+        <item>
+         <widget class="QLabel" name="lbl_instruction">
+          <property name="text">
+           <string>Select a test and press Start...</string>
+          </property>
+          <property name="alignment">
+           <set>Qt::AlignCenter</set>
+          </property>
+          <property name="wordWrap">
+           <bool>true</bool>
+          </property>
+          <property name="objectName">
+           <string>lbl_instruction</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QLineEdit" name="input_instruction">
+          <property name="placeholderText">
+           <string>Waiting for input...</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QPushButton" name="btn_done">
+          <property name="text">
+           <string>Done / Confirm</string>
+          </property>
+          <property name="objectName">
+           <string>btn_done</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <spacer name="verticalSpacerBot">
+          <property name="orientation">
+           <enum>Qt::Vertical</enum>
+          </property>
+         </spacer>
+        </item>
+        <item>
+         <widget class="QLabel" name="lbl_live_data">
+          <property name="text">
+           <string>State: IDLE | V: -- | I: -- | PF: --</string>
+          </property>
+          <property name="alignment">
+           <set>Qt::AlignCenter</set>
+          </property>
+          <property name="objectName">
+           <string>lbl_live_data</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QProgressBar" name="progress_bar">
+          <property name="value">
+           <number>0</number>
+          </property>
+         </widget>
+        </item>
+       </layout>
+      </widget>
+     </widget>
+    </item>
+    
+    <!-- Logs area below the splitter -->
+    <item>
+     <widget class="QLabel" name="label_3">
+      <property name="text">
+       <string>Logs &amp; Reports</string>
+      </property>
+      <property name="objectName">
+       <string>section_title</string>
+      </property>
+     </widget>
+    </item>
+    <item>
+     <widget class="QTextEdit" name="txt_logs">
+      <property name="readOnly">
+       <bool>true</bool>
+      </property>
+     </widget>
+    </item>
+    
+    <!-- Footer -->
+    <item>
+     <layout class="QHBoxLayout" name="footer_layout">
+      <item>
+       <widget class="QPushButton" name="btn_start">
+        <property name="text">
+         <string>Start</string>
+        </property>
+        <property name="objectName">
+         <string>btn_start</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QPushButton" name="btn_stop">
+        <property name="text">
+         <string>Pause/Resume</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QPushButton" name="btn_abort">
+        <property name="text">
+         <string>Abort</string>
+        </property>
+        <property name="objectName">
+         <string>btn_abort</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <spacer name="horizontalSpacer_2">
+        <property name="orientation">
+         <enum>Qt::Horizontal</enum>
+        </property>
+       </spacer>
+      </item>
+      <item>
+       <widget class="QPushButton" name="btn_connect_all">
+        <property name="text">
+         <string>Connect HW</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QPushButton" name="btn_emergency">
+        <property name="text">
+         <string>EMERGENCY STOP</string>
+        </property>
+        <property name="objectName">
+         <string>btn_emergency</string>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </item>
+   </layout>
+  </widget>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

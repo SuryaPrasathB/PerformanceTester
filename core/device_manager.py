@@ -79,6 +79,9 @@ class DeviceManager(QObject):
             return ModbusDriver(config_with_mock, self.logger)
         elif model.type.lower() == "dlms":
             return DlmsDriver(config_with_mock, self.logger)
+        elif model.type.lower() == "picoscope":
+            from drivers.picoscope_driver import PicoScopeDriver
+            return PicoScopeDriver(config_with_mock, self.logger)
         else:
             self.logger.error(f"Unknown device type: {model.type}")
             return None

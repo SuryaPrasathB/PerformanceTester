@@ -1,0 +1,130 @@
+/* Dark Theme QSS */
+QMainWindow {
+    background-color: #1e1e2e;
+    color: #cdd6f4;
+}
+
+QWidget {
+    font-family: "Segoe UI", "Inter", sans-serif;
+    font-size: 14px;
+    color: #cdd6f4;
+}
+
+QLabel#lbl_title {
+    font-size: 20px;
+    font-weight: bold;
+    color: #89b4fa;
+}
+
+QLabel#section_title {
+    font-size: 16px;
+    font-weight: bold;
+    color: #f38ba8;
+    padding-bottom: 5px;
+}
+
+QLabel#lbl_hw_status {
+    font-size: 14px;
+    font-weight: bold;
+    padding: 5px;
+    background-color: #313244;
+    border-radius: 4px;
+}
+
+QLabel#lbl_instruction {
+    font-size: 24px;
+    font-weight: bold;
+    color: #a6e3a1;
+    margin: 20px;
+}
+
+QLabel#lbl_live_data {
+    font-size: 16px;
+    background-color: #181825;
+    padding: 10px;
+    border-radius: 6px;
+}
+
+QPushButton {
+    background-color: #89b4fa;
+    color: #11111b;
+    border: none;
+    border-radius: 6px;
+    padding: 10px 20px;
+    font-weight: bold;
+}
+
+QPushButton:hover {
+    background-color: #b4befe;
+}
+
+QPushButton:disabled {
+    background-color: #45475a;
+    color: #7f849c;
+}
+
+QPushButton#btn_start {
+    background-color: #a6e3a1;
+}
+
+QPushButton#btn_start:hover {
+    background-color: #94e2d5;
+}
+
+QPushButton#btn_abort {
+    background-color: #f38ba8;
+}
+
+QPushButton#btn_abort:hover {
+    background-color: #eba0ac;
+}
+
+QPushButton#btn_emergency {
+    background-color: #ff0000;
+    color: #ffffff;
+    font-size: 16px;
+}
+
+QPushButton#btn_done {
+    background-color: #f9e2af;
+    color: #11111b;
+    font-size: 18px;
+    padding: 15px 30px;
+}
+
+QListWidget, QTableWidget, QTextEdit {
+    background-color: #181825;
+    border: 1px solid #313244;
+    border-radius: 6px;
+    padding: 5px;
+}
+
+QListWidget::item:selected {
+    background-color: #89b4fa;
+    color: #11111b;
+}
+
+QLineEdit {
+    background-color: #11111b;
+    border: 1px solid #45475a;
+    border-radius: 4px;
+    padding: 10px;
+    font-size: 16px;
+    color: #cdd6f4;
+}
+
+QSplitter::handle {
+    background-color: #313244;
+}
+
+QProgressBar {
+    border: 1px solid #313244;
+    border-radius: 4px;
+    text-align: center;
+    background-color: #181825;
+}
+
+QProgressBar::chunk {
+    background-color: #a6e3a1;
+    border-radius: 3px;
+}
