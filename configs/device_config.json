@@ -1,0 +1,24 @@
+{
+  "devices": [
+    {
+      "name": "EnergyMeter1",
+      "type": "dlms",
+      "port": "COM3",
+      "mock": true
+    },
+    {
+      "name": "PLC1",
+      "type": "modbus",
+      "ip": "192.168.1.10",
+      "port": 502,
+      "mock": true
+    },
+    {
+      "name": "Sensor1",
+      "type": "serial",
+      "port": "COM4",
+      "baudrate": 9600,
+      "mock": true
+    }
+  ]
+}
