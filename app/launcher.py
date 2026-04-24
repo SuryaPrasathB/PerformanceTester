@@ -29,6 +29,7 @@ class Launcher:
         self.device_manager = DeviceManager(self.config_service, self.logger)
         
         # 3. Initialize UI
+        from ui.main_window import MainWindow 
         self.main_window = MainWindow(self.device_manager)
         
         # 4. Wire Logger to UI

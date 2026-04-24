@@ -6,262 +6,285 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>1100</width>
-    <height>800</height>
+    <width>1200</width>
+    <height>850</height>
    </rect>
   </property>
   <property name="windowTitle">
    <string>Energy Meter Test System</string>
   </property>
   <widget class="QWidget" name="centralwidget">
-   <layout class="QVBoxLayout" name="verticalLayout">
-    <!-- Header -->
+   <layout class="QHBoxLayout" name="horizontalLayout_root">
+    <property name="spacing">
+     <number>0</number>
+    </property>
+    <property name="leftMargin">
+     <number>0</number>
+    </property>
+    <property name="topMargin">
+     <number>0</number>
+    </property>
+    <property name="rightMargin">
+     <number>0</number>
+    </property>
+    <property name="bottomMargin">
+     <number>0</number>
+    </property>
     <item>
-     <layout class="QHBoxLayout" name="header_layout">
-      <item>
-       <widget class="QLabel" name="lbl_title">
-        <property name="text">
-         <string>Meter Test System v2.0</string>
-        </property>
-        <property name="objectName">
-         <string>lbl_title</string>
-        </property>
-       </widget>
-      </item>
-      <item>
-       <spacer name="horizontalSpacer">
-        <property name="orientation">
-         <enum>Qt::Horizontal</enum>
-        </property>
-        <property name="sizeHint" stdset="0">
-         <size>
-          <width>40</width>
-          <height>20</height>
-         </size>
-        </property>
-       </spacer>
-      </item>
-      <item>
-       <widget class="QLabel" name="lbl_hw_status">
-        <property name="text">
-         <string>HW Status: OK</string>
-        </property>
-        <property name="objectName">
-         <string>lbl_hw_status</string>
-        </property>
-       </widget>
-      </item>
-      <item>
-       <widget class="QPushButton" name="btn_toggle_theme">
-        <property name="text">
-         <string>Toggle Theme</string>
-        </property>
-       </widget>
-      </item>
-     </layout>
-    </item>
-    
-    <!-- Body -->
-    <item>
-     <widget class="QSplitter" name="splitter_main">
-      <property name="orientation">
-       <enum>Qt::Horizontal</enum>
+     <widget class="QFrame" name="frame_sidebar">
+      <property name="minimumSize">
+       <size>
+        <width>70</width>
+        <height>0</height>
+       </size>
       </property>
-      
-      <!-- Left Panel -->
-      <widget class="QWidget" name="left_panel">
-       <layout class="QVBoxLayout" name="verticalLayout_2">
-        <item>
-         <widget class="QLabel" name="label_1">
-          <property name="text">
-           <string>Test Selection</string>
-          </property>
-          <property name="objectName">
-           <string>section_title</string>
-          </property>
-         </widget>
-        </item>
-        <item>
-         <widget class="QListWidget" name="list_tests"/>
-        </item>
-        <item>
-         <widget class="QLabel" name="label_device">
-          <property name="text">
-           <string>Devices Status:</string>
-          </property>
-          <property name="objectName">
-           <string>section_title</string>
-          </property>
-         </widget>
-        </item>
-        <item>
-         <widget class="QTableWidget" name="table_devices"/>
-        </item>
-       </layout>
-      </widget>
-      
-      <!-- Center Panel -->
-      <widget class="QWidget" name="center_panel">
-       <layout class="QVBoxLayout" name="verticalLayout_3">
-        <item>
-         <widget class="QLabel" name="label_2">
-          <property name="text">
-           <string>Progress &amp; Instructions</string>
-          </property>
-          <property name="alignment">
-           <set>Qt::AlignCenter</set>
-          </property>
-          <property name="objectName">
-           <string>section_title</string>
-          </property>
-         </widget>
-        </item>
-        <item>
-         <spacer name="verticalSpacerTop">
-          <property name="orientation">
-           <enum>Qt::Vertical</enum>
-          </property>
-         </spacer>
-        </item>
-        <item>
-         <widget class="QLabel" name="lbl_instruction">
-          <property name="text">
-           <string>Select a test and press Start...</string>
-          </property>
-          <property name="alignment">
-           <set>Qt::AlignCenter</set>
-          </property>
-          <property name="wordWrap">
-           <bool>true</bool>
-          </property>
-          <property name="objectName">
-           <string>lbl_instruction</string>
-          </property>
-         </widget>
-        </item>
-        <item>
-         <widget class="QLineEdit" name="input_instruction">
-          <property name="placeholderText">
-           <string>Waiting for input...</string>
-          </property>
-         </widget>
-        </item>
-        <item>
-         <widget class="QPushButton" name="btn_done">
-          <property name="text">
-           <string>Done / Confirm</string>
-          </property>
-          <property name="objectName">
-           <string>btn_done</string>
-          </property>
-         </widget>
-        </item>
-        <item>
-         <spacer name="verticalSpacerBot">
-          <property name="orientation">
-           <enum>Qt::Vertical</enum>
-          </property>
-         </spacer>
-        </item>
-        <item>
-         <widget class="QLabel" name="lbl_live_data">
-          <property name="text">
-           <string>State: IDLE | V: -- | I: -- | PF: --</string>
-          </property>
-          <property name="alignment">
-           <set>Qt::AlignCenter</set>
-          </property>
-          <property name="objectName">
-           <string>lbl_live_data</string>
-          </property>
-         </widget>
-        </item>
-        <item>
-         <widget class="QProgressBar" name="progress_bar">
-          <property name="value">
-           <number>0</number>
-          </property>
-         </widget>
-        </item>
-       </layout>
-      </widget>
+      <property name="maximumSize">
+       <size>
+        <width>70</width>
+        <height>16777215</height>
+       </size>
+      </property>
+      <property name="frameShape">
+       <enum>QFrame::NoFrame</enum>
+      </property>
+      <layout class="QVBoxLayout" name="verticalLayout_sidebar">
+       <property name="spacing">
+        <number>15</number>
+       </property>
+       <property name="leftMargin">
+        <number>0</number>
+       </property>
+       <property name="topMargin">
+        <number>20</number>
+       </property>
+       <property name="rightMargin">
+        <number>0</number>
+       </property>
+       <property name="bottomMargin">
+        <number>20</number>
+       </property>
+       <item>
+        <widget class="QLabel" name="lbl_logo">
+         <property name="minimumSize">
+          <size>
+           <width>70</width>
+           <height>60</height>
+          </size>
+         </property>
+         <property name="text">
+          <string>MTS</string>
+         </property>
+         <property name="alignment">
+          <set>Qt::AlignCenter</set>
+         </property>
+        </widget>
+       </item>
+       
+       <!-- Nav Row Template -->
+       <item>
+        <widget class="QFrame" name="nav_item_test">
+         <layout class="QHBoxLayout" name="hLayout_test">
+          <property name="spacing"><number>10</number></property>
+          <property name="leftMargin"><number>10</number></property>
+          <property name="topMargin"><number>0</number></property>
+          <property name="rightMargin"><number>0</number></property>
+          <property name="bottomMargin"><number>0</number></property>
+          <item>
+           <widget class="QPushButton" name="btn_nav_test">
+            <property name="minimumSize"><size><width>50</width><height>50</height></size></property>
+            <property name="maximumSize"><size><width>50</width><height>50</height></size></property>
+            <property name="text"><string>T</string></property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QLabel" name="lbl_nav_test">
+            <property name="text"><string>Test Dashboard</string></property>
+           </widget>
+          </item>
+         </layout>
+        </widget>
+       </item>
+
+       <item>
+        <widget class="QFrame" name="nav_item_logs">
+         <layout class="QHBoxLayout" name="hLayout_logs">
+          <property name="spacing"><number>10</number></property>
+          <property name="leftMargin"><number>10</number></property>
+          <property name="topMargin"><number>0</number></property>
+          <property name="rightMargin"><number>0</number></property>
+          <property name="bottomMargin"><number>0</number></property>
+          <item>
+           <widget class="QPushButton" name="btn_nav_logs">
+            <property name="minimumSize"><size><width>50</width><height>50</height></size></property>
+            <property name="maximumSize"><size><width>50</width><height>50</height></size></property>
+            <property name="text"><string>L</string></property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QLabel" name="lbl_nav_logs">
+            <property name="text"><string>System Logs</string></property>
+           </widget>
+          </item>
+         </layout>
+        </widget>
+       </item>
+
+       <item>
+        <widget class="QFrame" name="nav_item_debug">
+         <layout class="QHBoxLayout" name="hLayout_debug">
+          <property name="spacing"><number>10</number></property>
+          <property name="leftMargin"><number>10</number></property>
+          <property name="topMargin"><number>0</number></property>
+          <property name="rightMargin"><number>0</number></property>
+          <property name="bottomMargin"><number>0</number></property>
+          <item>
+           <widget class="QPushButton" name="btn_nav_debug">
+            <property name="minimumSize"><size><width>50</width><height>50</height></size></property>
+            <property name="maximumSize"><size><width>50</width><height>50</height></size></property>
+            <property name="text"><string>D</string></property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QLabel" name="lbl_nav_debug">
+            <property name="text"><string>Debug Screen</string></property>
+           </widget>
+          </item>
+         </layout>
+        </widget>
+       </item>
+
+       <item>
+        <widget class="QFrame" name="nav_item_reports">
+         <layout class="QHBoxLayout" name="hLayout_reports">
+          <property name="spacing"><number>10</number></property>
+          <property name="leftMargin"><number>10</number></property>
+          <property name="topMargin"><number>0</number></property>
+          <property name="rightMargin"><number>0</number></property>
+          <property name="bottomMargin"><number>0</number></property>
+          <item>
+           <widget class="QPushButton" name="btn_nav_reports">
+            <property name="minimumSize"><size><width>50</width><height>50</height></size></property>
+            <property name="maximumSize"><size><width>50</width><height>50</height></size></property>
+            <property name="text"><string>R</string></property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QLabel" name="lbl_nav_reports">
+            <property name="text"><string>Reports</string></property>
+           </widget>
+          </item>
+         </layout>
+        </widget>
+       </item>
+
+       <item>
+        <spacer name="spacer_sidebar">
+         <property name="orientation">
+          <enum>Qt::Vertical</enum>
+         </property>
+        </spacer>
+       </item>
+
+       <item>
+        <widget class="QFrame" name="nav_item_settings">
+         <layout class="QHBoxLayout" name="hLayout_settings">
+          <property name="spacing"><number>10</number></property>
+          <property name="leftMargin"><number>10</number></property>
+          <property name="topMargin"><number>0</number></property>
+          <property name="rightMargin"><number>0</number></property>
+          <property name="bottomMargin"><number>0</number></property>
+          <item>
+           <widget class="QPushButton" name="btn_nav_settings">
+            <property name="minimumSize"><size><width>50</width><height>50</height></size></property>
+            <property name="maximumSize"><size><width>50</width><height>50</height></size></property>
+            <property name="text"><string>S</string></property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QLabel" name="lbl_nav_settings">
+            <property name="text"><string>Settings</string></property>
+           </widget>
+          </item>
+         </layout>
+        </widget>
+       </item>
+       
+      </layout>
      </widget>
     </item>
-    
-    <!-- Logs area below the splitter -->
     <item>
-     <widget class="QLabel" name="label_3">
-      <property name="text">
-       <string>Logs &amp; Reports</string>
-      </property>
-      <property name="objectName">
-       <string>section_title</string>
-      </property>
+     <widget class="QWidget" name="widget_content_area">
+      <layout class="QVBoxLayout" name="verticalLayout_content">
+       <property name="spacing">
+        <number>0</number>
+       </property>
+       <property name="leftMargin">
+        <number>20</number>
+       </property>
+       <property name="topMargin">
+        <number>20</number>
+       </property>
+       <property name="rightMargin">
+        <number>20</number>
+       </property>
+       <property name="bottomMargin">
+        <number>20</number>
+       </property>
+       <item>
+        <widget class="QFrame" name="frame_top_bar">
+         <property name="minimumSize">
+          <size>
+           <width>0</width>
+           <height>60</height>
+          </size>
+         </property>
+         <property name="maximumSize">
+          <size>
+           <width>16777215</width>
+           <height>60</height>
+          </size>
+         </property>
+         <layout class="QHBoxLayout" name="horizontalLayout_top">
+          <item>
+           <widget class="QLabel" name="lbl_page_title">
+            <property name="text">
+             <string>Test Dashboard</string>
+            </property>
+            <property name="font">
+             <font>
+              <pointsize>16</pointsize>
+              <bold>true</bold>
+             </font>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <spacer name="spacer_top">
+            <property name="orientation">
+             <enum>Qt::Horizontal</enum>
+            </property>
+           </spacer>
+          </item>
+          <item>
+           <widget class="QLabel" name="lbl_hw_status">
+            <property name="text">
+             <string>HW: OK</string>
+            </property>
+           </widget>
+          </item>
+         </layout>
+        </widget>
+       </item>
+       <item>
+        <widget class="QStackedWidget" name="stacked_widget">
+         <property name="currentIndex">
+          <number>0</number>
+         </property>
+         <widget class="QWidget" name="page_test"/>
+        </widget>
+       </item>
+      </layout>
      </widget>
-    </item>
-    <item>
-     <widget class="QTextEdit" name="txt_logs">
-      <property name="readOnly">
-       <bool>true</bool>
-      </property>
-     </widget>
-    </item>
-    
-    <!-- Footer -->
-    <item>
-     <layout class="QHBoxLayout" name="footer_layout">
-      <item>
-       <widget class="QPushButton" name="btn_start">
-        <property name="text">
-         <string>Start</string>
-        </property>
-        <property name="objectName">
-         <string>btn_start</string>
-        </property>
-       </widget>
-      </item>
-      <item>
-       <widget class="QPushButton" name="btn_stop">
-        <property name="text">
-         <string>Pause/Resume</string>
-        </property>
-       </widget>
-      </item>
-      <item>
-       <widget class="QPushButton" name="btn_abort">
-        <property name="text">
-         <string>Abort</string>
-        </property>
-        <property name="objectName">
-         <string>btn_abort</string>
-        </property>
-       </widget>
-      </item>
-      <item>
-       <spacer name="horizontalSpacer_2">
-        <property name="orientation">
-         <enum>Qt::Horizontal</enum>
-        </property>
-       </spacer>
-      </item>
-      <item>
-       <widget class="QPushButton" name="btn_connect_all">
-        <property name="text">
-         <string>Connect HW</string>
-        </property>
-       </widget>
-      </item>
-      <item>
-       <widget class="QPushButton" name="btn_emergency">
-        <property name="text">
-         <string>EMERGENCY STOP</string>
-        </property>
-        <property name="objectName">
-         <string>btn_emergency</string>
-        </property>
-       </widget>
-      </item>
-     </layout>
     </item>
    </layout>
   </widget>

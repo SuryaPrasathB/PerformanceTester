@@ -4,27 +4,27 @@
       "name": "EnergyMeter1",
       "type": "dlms",
       "port": "COM3",
-      "mock": false
+      "mock": true
     },
     {
       "name": "PLC1",
       "type": "modbus",
       "ip": "192.168.0.106",
       "port": 502,
-      "mock": false
+      "mock": true
     },
     {
       "name": "Sensor1",
       "type": "serial",
       "port": "COM4",
       "baudrate": 9600,
-      "mock": false
+      "mock": true
     },
     {
       "name": "PicoScope1",
       "type": "picoscope",
       "port": "USB",
-      "mock": false
+      "mock": true
     }
   ],
   "plc": {
