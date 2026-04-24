@@ -35,7 +35,7 @@ class SafetyManager:
         Returns True if safe to proceed, False otherwise.
         """
         if self.emergency_triggered:
-            self.logger.error("Pre-check failed: System is in EMERGENCY LOCKOUT state.")
+            self.logger.error("Pre-check failed: System is in EMERGENCY LOCKOUT state. Please reset via UI.")
             return False
 
         # Current setpoints from context

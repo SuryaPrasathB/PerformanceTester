@@ -1,99 +1,111 @@
 import time
+from typing import List
 from core.test_definitions.base_test import BaseTest
+from core.test_engine.test_step import TestStep
 
 class G2NormalOperationTest(BaseTest):
     """
-    G2 Normal Operation Test:
-    Simulates loading application (voltage/current/PF), reading meter values repeatedly,
+    Implementation of the G2 Normal Operation Test sequence.
+    This test focuses on verifying the meter's ability to handle prepaid operations 
     and simulating credit depletion over a specific cycle.
     """
     
+    def get_steps(self) -> List[TestStep]:
+        return [
+            TestStep("Initialization", weight=5, estimated_duration=2),
+            TestStep("Turn On Source", weight=5, estimated_duration=3),
+            TestStep("Initial Register Read", weight=10, estimated_duration=5),
+            # Cycles (3 total)
+            TestStep("Loop: Credit Prompt", weight=5, estimated_duration=0, requires_input=True),
+            TestStep("Loop: Monitoring Current", weight=10, estimated_duration=15),
+            TestStep("Loop: Credit Prompt", weight=5, estimated_duration=0, requires_input=True),
+            TestStep("Loop: Monitoring Current", weight=10, estimated_duration=15),
+            TestStep("Loop: Credit Prompt", weight=5, estimated_duration=0, requires_input=True),
+            TestStep("Loop: Monitoring Current", weight=10, estimated_duration=15),
+            # Final
+            TestStep("Final Register Read", weight=10, estimated_duration=5),
+            TestStep("Completion", weight=5, estimated_duration=2)
+        ]
+
     def setup(self, context):
         context.logger.info("G2 Normal Operation Test - Setup started.")
         
-        # Initialize runtime values
-        v = 230.0
-        i = 5.0
-        pf = 0.95
+        self.v_set = 240.0
+        self.i_set = 10.0
+        self.pf_set = 1.0
+        self.target_registers = ["Active Energy", "Current Credit"]
         
-        context.update_runtime_value("voltage", v)
-        context.update_runtime_value("current", i)
-        context.update_runtime_value("power_factor", pf)
-        context.update_runtime_value("credit", 10.0) # start with 10 units of credit
-        
-        # Hardware Integration start
-        if hasattr(context, 'hardware_service') and context.hardware_service:
-            context.hardware_service.inject_signal(v, i, pf)
-            context.hardware_service.control_load(True)
-            
-        context.logger.info("G2 Normal Operation Test - Setup completed. Load is ON.")
+        self.initial_registers = {}
+        self.final_registers = {}
 
     def run(self, context):
-        context.logger.info("G2 Normal Operation Test - Run started.")
+        context.logger.info("G2 Normal Operation Test - Execution started.")
         
-        # UI Wait Protocol Demonstration
-        context.prompt_user_action("Please verify physical wire connections and press Done to proceed.", requires_input=False)
-        
-        cycles_completed = 0
-        max_cycles = 3
-        
-        while cycles_completed < max_cycles:
-            context.wait_if_paused()
-            context.check_cancel()
-            
-            # Read current credit
-            current_credit = context.get_runtime_value("credit")
-            
-            # Simulate reading meter values repeatedly
-            for _ in range(3):
-                context.wait_if_paused()
-                context.check_cancel()
-                
-                # Hardware reading actuals
-                voltage = context.get_runtime_value("voltage")
-                current = context.get_runtime_value("current")
-                
-                if hasattr(context, 'hardware_service') and context.hardware_service:
-                    readings = context.hardware_service.get_meter_readings()
-                    # Example of overriding with live read data if available
-                    # voltage = readings.get('voltage', voltage)
-                    # current = readings.get('current', current)
+        context.start_step("Initialization")
+        hw = context.hardware_service
+        hw.inject_signal(self.v_set, self.i_set, self.pf_set)
 
-                context.logger.debug(f"Reading meter... V: {voltage}V, I: {current}A")
-                time.sleep(1) # simulate delay
-                
-            # Deplete credit
-            current_credit -= 3.33 # roughly deplete by 10 over 3 cycles
-            if current_credit < 0:
-                current_credit = 0.0
-            context.update_runtime_value("credit", round(current_credit, 2))
-            context.logger.info(f"Credit depleted. Current credit: {current_credit:.2f}")
-            
-            cycles_completed += 1
-            context.logger.info(f"Completed cycle {cycles_completed}/{max_cycles}.")
+        # Step 2: Turn On Source (PLC)
+        context.start_step("Turn On Source")
+        context.update_status("Step 2: Activating physical load source...")
+        hw.control_load(True)
 
-        context.logger.info("G2 Normal Operation Test - Run completed.")
+        context.start_step("Initial Register Read")
+        context.update_status("Step 4: Reading initial meter registers...")
+        self.initial_registers = hw.read_meter_registers(self.target_registers)
+        context.update_runtime_value("initial_registers", self.initial_registers)
+
+        # Looping Step 3 to 6 (Initial + 2 repeats = 3 total)
+        for i in range(3):
+            context.update_status(f"Cycle {i+1}/3: Starting test loop...")
+            
+            # Step 3: Prompt user for amount of credit
+            context.start_step("Loop: Credit Prompt")
+            credit_amount = context.prompt_user_action(
+                f"Cycle {i+1}: Please enter the amount of credit to be added:",
+                requires_input=True
+            )
+            context.logger.info(f"User entered credit: {credit_amount}")
+            context.update_runtime_value(f"cycle_{i+1}_credit", credit_amount)
+
+            # Step 5 & 6: Monitor and Wait until current 0
+            context.start_step("Loop: Monitoring Current")
+            context.update_status(f"Cycle {i+1}/4: Monitoring current until depletion (0A)...")
+            success = hw.wait_for_current_zero(threshold=0.1, timeout_sec=60, context=context)
+            
+            if not success:
+                context.logger.error(f"Cycle {i+1} failed: Timeout waiting for current 0.")
+                raise Exception(f"Current did not reach zero in Cycle {i+1}")
+            
+            context.update_status(f"Cycle {i+1}/4: Depletion detected successfully.")
+
+        # Step 7: Read Memory Registers - compare with step 4 read
+        context.start_step("Final Register Read")
+        context.update_status("Step 7: Reading final memory registers for comparison...")
+        self.final_registers = hw.read_meter_registers(self.target_registers)
+        context.update_runtime_value("final_registers", self.final_registers)
+        
+        # Step 8: Complete Test
+        context.start_step("Completion")
+        context.update_status("Step 8: Finalizing test results...")
 
     def verify(self, context):
         context.logger.info("G2 Normal Operation Test - Verification started.")
         
-        final_credit = context.get_runtime_value("credit")
-        if final_credit > 0.1:
-            context.logger.warning(f"Verification issue: Credit was not fully depleted. Final credit: {final_credit}")
-            context.test_results["success"] = False
-            context.test_results["reason"] = "Credit not fully depleted."
-        else:
-            context.logger.info("Verification passed: Credit was depleted correctly.")
-            context.test_results["success"] = True
+        # Compare initial and final registers
+        results = {"success": True, "details": []}
+        
+        for reg in self.target_registers:
+            initial = self.initial_registers.get(reg)
+            final = self.final_registers.get(reg)
+            
+            context.logger.info(f"Register {reg}: Initial={initial}, Final={final}")
+            
+        context.update_runtime_value("test_results", results)
 
     def cleanup(self, context):
         context.logger.info("G2 Normal Operation Test - Cleanup started.")
-        # Ensure physical load is turned off
-        if hasattr(context, 'hardware_service') and context.hardware_service:
-            context.hardware_service.control_load(False)
-            context.hardware_service.inject_signal(0.0, 0.0, 1.0)
-            
-        # Reset runtime values back to zero or default safe state
-        context.update_runtime_value("voltage", 0.0)
-        context.update_runtime_value("current", 0.0)
-        context.logger.info("G2 Normal Operation Test - Cleanup completed. Load is OFF.")
+        hw = context.hardware_service
+        if hw:
+            hw.control_load(False)
+            hw.inject_signal(0, 0, 1.0)

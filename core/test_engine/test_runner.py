@@ -18,13 +18,22 @@ class TestRunner(QThread):
     on_log = Signal(str, str) # level, message
     on_data_update = Signal(dict)
     on_user_action_required = Signal(str, bool)
+    on_status_update = Signal(str)
+    on_progress_update = Signal(int)
+    on_step_animate = Signal(int, int, int) # start, end, duration_ms
     
     def __init__(self, test_instance: BaseTest, context: TestContext):
         super().__init__()
         self.test = test_instance
         self.context = context
         self.context._prompt_callback = self._emit_prompt
+        self.context._status_callback = self.on_status_update.emit
+        self.context._progress_callback = self.on_progress_update.emit
+        self.context._step_callback = self._handle_step_started
         self.state_machine = StateMachine()
+        
+        self.step_ranges = {}
+        self._initialize_progress_engine()
         
         # Override the context logger with a custom one that emits to the UI
         self._setup_logging()
@@ -71,14 +80,6 @@ class TestRunner(QThread):
             # 1. INIT
             self.set_state(TestState.INIT)
             self.test.setup(self.context)
-            
-            # Start a background task or loop here to emit runtime data periodically
-            # We can interleave the test execution and data emission, or emit from test.
-            # But the test itself blocks this thread during `run()`. The UI can read via data updates.
-            # To provide continuous data updates, we can wrap the test run, or let the test update 
-            # runtime_values and we emit them. Since the test loop is single-threaded here, 
-            # we will rely on a monitor thread, or let the test emit them, or we emit them 
-            # periodically between test calls. A simple approach: start a timer thread.
             
             # 2. RUNNING
             # Safety Pre-Check before transitioning
@@ -169,6 +170,40 @@ class TestRunner(QThread):
             self.context.pause_event.set()
             self.set_state(TestState.RUNNING)
             self.logger.info("Test resumed.")
+
+    def _initialize_progress_engine(self):
+        """Calculates percentage ranges for each test step based on metadata weights."""
+        steps = self.test.get_steps()
+        if not steps: return
+        
+        total_weight = sum(s.weight for s in steps)
+        if total_weight == 0: return
+        
+        current_pos = 0.0
+        for step in steps:
+            # We allow multiple steps with same name (loops), so we store as a list
+            step_width = (step.weight / total_weight) * 100
+            range_info = (current_pos, current_pos + step_width, step.estimated_duration)
+            
+            if step.name not in self.step_ranges:
+                self.step_ranges[step.name] = []
+            self.step_ranges[step.name].append(range_info)
+            
+            current_pos += step_width
+        
+        self.step_execution_counts = {name: 0 for name in self.step_ranges}
+
+    def _handle_step_started(self, step_name: str):
+        """Processes a step-start notification and emits high-fidelity animation signals."""
+        if step_name in self.step_ranges:
+            occurence_idx = self.step_execution_counts[step_name]
+            ranges = self.step_ranges[step_name]
+            range_info = ranges[occurence_idx % len(ranges)]
+            
+            start_pct, end_pct, duration = range_info
+            self.on_step_animate.emit(int(start_pct), int(end_pct), int(duration * 1000))
+            
+            self.step_execution_counts[step_name] += 1
 
     def _emit_prompt(self, msg: str, req_input: bool):
         """Helper to safely emit the user prompt from test context."""

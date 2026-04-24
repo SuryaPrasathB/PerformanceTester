@@ -132,7 +132,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             self.test_page.test_runner.cancel()
 
     @Slot()
-    def on_emergency_triggered(self):
+    def handle_emergency_triggered(self):
         self.trigger_emergency_stop()
 
     def eventFilter(self, obj, event):

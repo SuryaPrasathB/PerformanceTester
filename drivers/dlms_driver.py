@@ -143,8 +143,11 @@ class DlmsDriver(BaseDriver):
         """Reads data from the DLMS meter using an OBIS code."""
         if self.mock_mode:
             self.logger.debug(f"[MOCK] DLMS reading OBIS {obis_code}.")
-            time.sleep(0.1)
-            return "MOCK_DLMS_VALUE"
+            time.sleep(0.05)
+            # Return realistic numeric values for common OBIS codes or a dict for full readings
+            if obis_code == "1.0.0.0.0.255": # Default / General
+                return {"voltage": 240.0, "current": 5.0, "power_factor": 1.0}
+            return 0.0 # Default for other codes
 
         if not self.is_connected or not self.reader:
             self.logger.error("DLMS Driver: Cannot read data, not connected.")

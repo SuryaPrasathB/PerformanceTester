@@ -74,14 +74,64 @@ class HardwareService(QObject):
             self.logger.warning("Hardware Service: Meter not connected.")
             return {"voltage": 0.0, "current": 0.0}
             
-        # In real logic, invoke DLMS driver methods directly
-        # Example dummy fetch logic matching mock functionality
         data = self.meter_drv.read_data()
         
-        # If mocked, simply fake some read data variation based on injection values
-        # We will assume TestRunner updates Context, not this class directly.
-        # But here we can fetch actual raw data from the driver.
+        # Ensure data is a dictionary (Mock drivers might return a single value if not updated)
+        if not isinstance(data, dict):
+            if isinstance(data, (int, float)):
+                 return {"voltage": 0.0, "current": float(data)}
+            return {"voltage": 0.0, "current": 0.0}
+            
         return data
+
+    def read_meter_registers(self, register_list: list) -> dict:
+        """
+        Reads a list of memory registers from the meter.
+        Supports both DLMS OBIS codes and Modbus addresses depending on the driver.
+        """
+        if not self.meter_drv or not self.meter_drv.is_connected:
+            self.logger.error("Hardware Service: Meter driver unavailable or disconnected.")
+            return {}
+
+        results = {}
+        for reg in register_list:
+            results[reg] = self.meter_drv.read_data(reg)
+        return results
+
+    def wait_for_current_zero(self, threshold: float = 0.1, timeout_sec: int = 30, context=None) -> bool:
+        """
+        Monitors the meter current until it drops below the threshold or timeout occurs.
+        """
+        import time
+        start_time = time.time()
+        self.logger.info(f"Monitoring current until < {threshold}A (Timeout: {timeout_sec}s)")
+        
+        # Simulation for mock mode: gradually decrease current
+        mock_sim_current = 5.0 
+        
+        while (time.time() - start_time) < timeout_sec:
+            if context:
+                context.check_cancel()
+                context.wait_if_paused()
+
+            readings = self.get_meter_readings()
+            current = readings.get("current", 0.0)
+            
+            # If in mock mode, simulate current drop over time to allow test to progress
+            if self.meter_drv and self.meter_drv.mock_mode:
+                # Decrease mock current by 1A every 2 seconds
+                elapsed = time.time() - start_time
+                current = max(0.0, mock_sim_current - (elapsed * 0.5))
+                self.logger.debug(f"[MOCK SIM] Current decaying: {current:.2f}A")
+            
+            if current < threshold:
+                self.logger.info(f"Current reached zero-threshold: {current:.2f}A")
+                return True
+            
+            time.sleep(1)
+            
+        self.logger.error("Timeout waiting for current to reach zero.")
+        return False
 
     def control_load(self, turn_on: bool) -> bool:
         """Acts on the physical output relays safely."""

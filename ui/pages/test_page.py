@@ -1,5 +1,5 @@
 from PySide6.QtWidgets import QWidget
-from PySide6.QtCore import Slot, Qt
+from PySide6.QtCore import Slot, Qt, QPropertyAnimation, QEasingCurve
 from ui.pages.ui_test_page import Ui_TestPage
 
 class TestPage(QWidget, Ui_TestPage):
@@ -19,6 +19,14 @@ class TestPage(QWidget, Ui_TestPage):
         self.btn_abort.setEnabled(False)
         self.input_instruction.hide()
         self.btn_done.hide()
+
+        # Apply Premium Styling to Progress Bar
+        self._apply_premium_styling()
+
+        # Progress Animation Engine
+        self.progress_anim = QPropertyAnimation(self.progress_bar, b"value")
+        self.progress_anim.setEasingCurve(QEasingCurve.Type.InOutQuad)
+        self.is_milestone_anim = False
 
     def _connect_signals(self):
         self.btn_start.clicked.connect(self.start_test)
@@ -53,13 +61,15 @@ class TestPage(QWidget, Ui_TestPage):
             self.test_runner.on_state_changed.connect(self.update_test_state)
             self.test_runner.on_log.connect(self.main_window.append_log)
             self.test_runner.on_data_update.connect(self.update_test_data)
-            self.test_runner.finished.connect(self.on_test_finished)
+            self.test_runner.finished.connect(self.handle_test_finished)
             self.test_runner.on_user_action_required.connect(self.prompt_user_action)
+            self.test_runner.on_status_update.connect(self.lbl_instruction.setText)
+            self.test_runner.on_step_animate.connect(self.smart_step_animate)
             
             hw_service = self.test_runner.context.hardware_service
             if hw_service:
                 hw_service.hardware_status_update.connect(self.main_window.update_hardware_status)
-                hw_service.emergency_triggered.connect(self.main_window.on_emergency_triggered)
+                hw_service.emergency_triggered.connect(self.main_window.handle_emergency_triggered)
             
             self.btn_start.setEnabled(False)
             self.btn_stop.setEnabled(True)
@@ -82,6 +92,7 @@ class TestPage(QWidget, Ui_TestPage):
             self.test_runner.resume()
             self.btn_stop.setText("Pause")
             self.lbl_instruction.setText("Test running...")
+            self.progress_anim.resume()
 
     @Slot()
     def cancel_test(self):
@@ -103,7 +114,8 @@ class TestPage(QWidget, Ui_TestPage):
         self.lbl_live_data.setText(f"STATE: {state} | V: {v}V | I: {i}A | PF: {pf}")
         
     @Slot()
-    def on_test_finished(self):
+    def handle_test_finished(self):
+        self.progress_anim.stop()
         self.btn_start.setEnabled(True)
         self.btn_stop.setEnabled(False)
         self.btn_abort.setEnabled(False)
@@ -114,6 +126,7 @@ class TestPage(QWidget, Ui_TestPage):
 
     @Slot(str, bool)
     def prompt_user_action(self, message: str, requires_input: bool):
+        self.progress_anim.stop() # Freeze animation during user input
         self.lbl_instruction.setText(message)
         if requires_input:
             self.input_instruction.show()
@@ -123,8 +136,12 @@ class TestPage(QWidget, Ui_TestPage):
             self.input_instruction.hide()
         self.btn_done.show()
         self.btn_done.setEnabled(True)
-        try: self.btn_done.clicked.disconnect()
-        except: pass
+        # Safely disconnect any previous connections to avoid multiple calls or warnings
+        try:
+            if self.btn_done.receivers(self.btn_done.clicked) > 0:
+                self.btn_done.clicked.disconnect()
+        except (TypeError, RuntimeError):
+            pass
         self.btn_done.clicked.connect(self.resolve_user_action)
 
     @Slot()
@@ -132,5 +149,42 @@ class TestPage(QWidget, Ui_TestPage):
         self.btn_done.hide()
         self.input_instruction.hide()
         user_val = self.input_instruction.text()
+        self.progress_anim.resume() # Resume the active step animation
         if self.test_runner:
             self.test_runner.resume_from_user(user_val)
+
+    @Slot(int, int, int)
+    def smart_step_animate(self, start_val: int, end_val: int, duration_ms: int):
+        """Performs a precise, metadata-driven animation for a logical test step."""
+        if self.progress_anim.state() == QPropertyAnimation.State.Running:
+            self.progress_anim.stop()
+            
+        self.progress_anim.setDuration(duration_ms)
+        self.progress_anim.setStartValue(start_val)
+        self.progress_anim.setEndValue(end_val)
+        # Use Linear for background flows, InOutQuad for snappy transitions
+        self.progress_anim.setEasingCurve(QEasingCurve.Type.Linear if duration_ms > 3000 else QEasingCurve.Type.InOutQuad)
+        self.progress_anim.start()
+
+    def _apply_premium_styling(self):
+        """Applies advanced CSS for a high-fidelity look."""
+        self.progress_bar.setStyleSheet("""
+            QProgressBar {
+                border: 2px solid #334155;
+                border-radius: 12px;
+                background-color: #0F172A;
+                text-align: center;
+                color: transparent; /* Hide text for a cleaner look */
+                height: 24px;
+            }
+            QProgressBar::chunk {
+                background-color: qlineargradient(
+                    spread:pad, x1:0, y1:0, x2:1, y2:0, 
+                    stop:0 #3B82F6, stop:0.5 #60A5FA, stop:1 #3B82F6
+                );
+                border-radius: 10px;
+                margin: 2px;
+            }
+        """)
+        # Note: In a real app, we might add a QGraphicsDropShadowEffect here 
+        # to the progress bar for the 'glow' mentioned by the user.

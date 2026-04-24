@@ -35,8 +35,11 @@ class TestContext:
         self.user_action_event = threading.Event()
         self.user_input_result = ""
         
-        # We will inject a callback here from TestRunner to emit signals safely
+        # We will inject callbacks here from TestRunner to emit signals safely
         self._prompt_callback = None
+        self._status_callback = None
+        self._progress_callback = None
+        self._step_callback = None
         
     def check_cancel(self):
         """Checks if the test has been cancelled."""
@@ -78,3 +81,20 @@ class TestContext:
             
         self.logger.info("USER ACTION COMPLETED/CONFIRMED.")
         return self.user_input_result
+
+    def update_status(self, message: str):
+        """Sends a status commentary message to the UI."""
+        self.logger.info(f"STATUS: {message}")
+        if self._status_callback:
+            self._status_callback(message)
+
+    def update_progress(self, percentage: int):
+        """Updates the test progress bar on the UI."""
+        if self._progress_callback:
+            self._progress_callback(percentage)
+
+    def start_step(self, step_name: str):
+        """Signals the start of a logical test step for smart progress tracking."""
+        self.logger.info(f">>> STARTING STEP: {step_name}")
+        if self._step_callback:
+            self._step_callback(step_name)

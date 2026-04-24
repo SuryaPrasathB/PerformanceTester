@@ -1,10 +1,16 @@
 from abc import ABC, abstractmethod
+from typing import List
+from core.test_engine.test_step import TestStep
 
 class BaseTest(ABC):
     """
     Abstract base class for all test definitions.
     Defines the structure that tests must follow.
     """
+
+    def get_steps(self) -> List[TestStep]:
+        """ Returns a list of TestStep metadata objects defining the test sequence. """
+        return []
 
     @abstractmethod
     def setup(self, context):
