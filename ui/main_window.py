@@ -1,7 +1,7 @@
 import os
 import sys
 from PySide6.QtWidgets import QMainWindow, QGraphicsOpacityEffect
-from PySide6.QtCore import Slot, Qt, QPropertyAnimation, QEasingCurve, QParallelAnimationGroup
+from PySide6.QtCore import Slot, Qt, QPropertyAnimation, QEasingCurve, QParallelAnimationGroup, QTimer
 from PySide6.QtGui import QColor
 
 from ui.ui_main_window import Ui_MainWindow
@@ -13,7 +13,7 @@ from ui.pages.reports_page import ReportsPage
 
 class MainWindow(QMainWindow, Ui_MainWindow):
     """
-    Main shell for the application with a smart sidebar and page navigation.
+    Main shell for the application with a toggleable sidebar and page navigation.
     """
     def __init__(self, device_manager):
         super().__init__()
@@ -35,9 +35,12 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.stacked_widget.addWidget(self.reports_page)
         self.stacked_widget.addWidget(self.settings_page)
         
-        # 3. Sidebar State
+        # 3. Sidebar State & Timer
         self.sidebar_expanded = False
         self._current_animations = []
+        self.collapse_timer = QTimer()
+        self.collapse_timer.setSingleShot(True)
+        self.collapse_timer.timeout.connect(lambda: self._animate_sidebar(False))
         
         # 4. Setup Navigation & Effects
         self._setup_navigation()
@@ -49,14 +52,17 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self._animate_sidebar(False, instant=True)
         
     def _setup_navigation(self):
-        # 1. Click signals for the icons (Buttons)
+        # 1. Sidebar Toggle (Pancake)
+        self.btn_sidebar_toggle.clicked.connect(lambda: self._animate_sidebar(not self.sidebar_expanded))
+        
+        # 2. Click signals for the icons (Buttons)
         self.btn_nav_test.clicked.connect(lambda: self._switch_page(1, "Test Dashboard"))
         self.btn_nav_logs.clicked.connect(lambda: self._switch_page(2, "System Logs"))
         self.btn_nav_debug.clicked.connect(lambda: self._switch_page(3, "Debug Screen"))
         self.btn_nav_reports.clicked.connect(lambda: self._switch_page(4, "Reports"))
         self.btn_nav_settings.clicked.connect(lambda: self._switch_page(5, "Settings"))
         
-        # 2. Make the entire frames clickable (via event filters)
+        # 3. Make the entire frames clickable (via event filters)
         self.nav_item_test.installEventFilter(self)
         self.nav_item_logs.installEventFilter(self)
         self.nav_item_debug.installEventFilter(self)
@@ -81,6 +87,10 @@ class MainWindow(QMainWindow, Ui_MainWindow):
     def _switch_page(self, index, title):
         self.stacked_widget.setCurrentIndex(index)
         self.lbl_page_title.setText(title)
+        
+        # Requirement: Collapse sidebar on page change
+        if self.sidebar_expanded:
+            self._animate_sidebar(False)
 
     def _load_theme(self):
         theme_file = "dark_theme.qss" if self.current_theme == "dark" else "light_theme.qss"
@@ -115,11 +125,9 @@ class MainWindow(QMainWindow, Ui_MainWindow):
     def trigger_emergency_stop(self):
         self.append_log("ERROR", "MANUAL EMERGENCY STOP TRIGGERED!")
         self.update_hardware_status("SYSTEM", "EMERGENCY STOP")
-        # Notify pages if needed
         self.test_page.btn_start.setEnabled(False)
         self.test_page.btn_stop.setEnabled(False)
         self.test_page.btn_abort.setEnabled(False)
-        
         if self.test_page.test_runner:
             self.test_page.test_runner.cancel()
 
@@ -128,12 +136,13 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.trigger_emergency_stop()
 
     def eventFilter(self, obj, event):
-        # Handle Sidebar Hover (Expand/Collapse)
+        # Handle Sidebar Timer (15s auto-collapse on leave)
         if obj == self.frame_sidebar:
             if event.type() == event.Type.Enter:
-                self._animate_sidebar(True)
+                self.collapse_timer.stop() # Cancel collapse if mouse returns
             elif event.type() == event.Type.Leave:
-                self._animate_sidebar(False)
+                if self.sidebar_expanded:
+                    self.collapse_timer.start(15000) # 15 seconds
         
         # Handle Navigation Clicks on the entire row
         elif event.type() == event.Type.MouseButtonPress:
@@ -154,7 +163,11 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         if not instant and expand == self.sidebar_expanded: return
         self.sidebar_expanded = expand
         
-        width = 200 if expand else 70
+        # Reset timer if manually collapsed
+        if not expand:
+            self.collapse_timer.stop()
+            
+        width = 250 if expand else 70
         duration = 0 if instant else 350
         opacity = 1.0 if expand else 0.0
         
@@ -176,7 +189,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.group.addAnimation(self.animation_max)
         
         # 2. Animate Opacity for Labels
-        self._current_animations = [] # Prevent GC
+        self._current_animations = []
         for effect in self.label_effects:
             anim = QPropertyAnimation(effect, b"opacity")
             anim.setDuration(duration)
@@ -185,7 +198,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             self.group.addAnimation(anim)
             self._current_animations.append(anim)
         
-        # 3. Apply Styles (Fixed icons)
+        # 3. Apply Styles
         self._apply_sidebar_style(expand)
         
         if instant:
@@ -203,6 +216,25 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         
         icons_dir = os.path.join(os.path.dirname(__file__), "resources", "icons")
         
+        # Style the Toggle Button (Dynamic Icon: Menu vs Cross)
+        toggle_icon_file = "cross.png" if expand else "menu.png"
+        toggle_icon_path = os.path.join(icons_dir, toggle_icon_file)
+        self.btn_sidebar_toggle.setIcon(QIcon(toggle_icon_path))
+        self.btn_sidebar_toggle.setIconSize(QSize(32, 32))
+        self.btn_sidebar_toggle.setText("")
+        
+        self.btn_sidebar_toggle.setStyleSheet("""
+            QPushButton {
+                background-color: transparent;
+                border: none;
+                text-align: center;
+            }
+            QPushButton:hover {
+                background-color: rgba(255, 255, 255, 0.05);
+                border-radius: 8px;
+            }
+        """)
+
         buttons = [
             (self.btn_nav_test, "dashboard.png"),
             (self.btn_nav_logs, "logs.png"),
@@ -211,27 +243,31 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             (self.btn_nav_settings, "settings.png")
         ]
         
-        # Styling for icons
+        # Centered padding: (70/2 - 32/2) = 19px
+        # Expanded padding: Shift right to reduce gap (30px)
+        # Note: We now have 10px frame margin, so button is in 50px wide container.
+        # Button is 50px, Icon is 32px. Center is 50/2 - 32/2 = 9px.
+        padding = 9
+        
         for btn, icon_file in buttons:
             icon_path = os.path.join(icons_dir, icon_file)
             btn.setIcon(QIcon(icon_path))
             btn.setIconSize(QSize(32, 32))
             btn.setText("")
             
-            btn.setStyleSheet("""
-                QPushButton {
+            btn.setStyleSheet(f"""
+                QPushButton {{
                     background-color: transparent;
                     border: none;
                     text-align: center;
                     padding: 0px;
-                }
-                QPushButton:hover {
+                }}
+                QPushButton:hover {{
                     background-color: rgba(255, 255, 255, 0.05);
                     border-radius: 8px;
-                }
+                }}
             """)
         
-        # Labels styling - negative margin removed to prevent cutting off
         for lbl in self.nav_labels:
             lbl.setStyleSheet("font-size: 14px; font-weight: 500; color: #94A3B8; padding-left: 0px; margin-left: 0px;")
 
