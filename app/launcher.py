@@ -3,6 +3,7 @@ from PySide6.QtWidgets import QApplication
 from services.config_service import ConfigService
 from services.logging_service import LoggingService
 from core.device_manager import DeviceManager
+from services.database_service import DatabaseService
 from ui.main_window import MainWindow
 
 class Launcher:
@@ -19,6 +20,13 @@ class Launcher:
         
         self.logger.info("Starting Meter Test System...")
         
+        db_config = self.config_service.get_database_config()
+        self.database_service = DatabaseService(db_config, self.logger)
+        try:
+            self.database_service.connect()
+        except Exception as e:
+            self.logger.error(f"Failed to connect to MySQL: {e}")
+        
         try:
             self.config_service.load_config()
             self.logger.info("Configuration loaded successfully.")
@@ -26,7 +34,7 @@ class Launcher:
             self.logger.error(f"Failed to load configuration: {e}")
         
         # 2. Initialize Core Logic
-        self.device_manager = DeviceManager(self.config_service, self.logger)
+        self.device_manager = DeviceManager(self.config_service, self.logger, self.database_service)
         
         # 3. Initialize UI
         from ui.main_window import MainWindow 

@@ -18,6 +18,11 @@ class TestContext:
         
         self.safety_manager = self.hardware_service.safety_manager
         
+        # Database Integration
+        self.database_service = self.device_manager.database_service
+        self.meter_serial_number = ""
+        self.db_row_id = None
+        
         # Runtime values like voltage, current, PF, etc.
         self.runtime_values = {}
         

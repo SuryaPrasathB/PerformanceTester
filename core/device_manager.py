@@ -41,10 +41,11 @@ class DeviceManager(QObject):
     # Signal emitted when a device's connection status changes
     device_status_changed = Signal(str, bool) 
 
-    def __init__(self, config_service, logger: logging.Logger):
+    def __init__(self, config_service, logger: logging.Logger, database_service=None):
         super().__init__()
         self.config_service = config_service
         self.logger = logger
+        self.database_service = database_service
         
         self.devices: Dict[str, DeviceModel] = {}
         self.drivers: Dict[str, BaseDriver] = {}

@@ -11,6 +11,24 @@ class PLCController:
         self.coils = self.config.get("coils", {})
         self.registers = self.config.get("registers", {})
         self.logger = logging.getLogger(__name__)
+        
+    def write_coil(self, address: int, value: bool) -> bool:
+        """Raw write to a Modbus coil."""
+        return self.modbus_driver.write_data(address=address, value=1 if value else 0)
+
+    def read_coil(self, address: int) -> bool:
+        """Raw read from a Modbus coil."""
+        data = self.modbus_driver.read_data(address=address, count=1)
+        return bool(data[0]) if data else False
+
+    def write_register(self, address: int, value: int) -> bool:
+        """Raw write to a Modbus holding register."""
+        return self.modbus_driver.write_data(address=address, value=value)
+
+    def read_register(self, address: int) -> int:
+        """Raw read from a Modbus input/holding register."""
+        data = self.modbus_driver.read_data(address=address, count=1)
+        return data[0] if data else 0
 
     def connect(self) -> bool:
         """Ensures the underlying PLC modbus connection is active."""

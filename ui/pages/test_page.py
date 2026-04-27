@@ -92,7 +92,8 @@ class TestPage(QWidget, Ui_TestPage):
             self.test_runner.resume()
             self.btn_stop.setText("Pause")
             self.lbl_instruction.setText("Test running...")
-            self.progress_anim.resume()
+            if self.progress_anim.state() == QPropertyAnimation.State.Paused:
+                self.progress_anim.resume()
 
     @Slot()
     def cancel_test(self):
@@ -149,7 +150,8 @@ class TestPage(QWidget, Ui_TestPage):
         self.btn_done.hide()
         self.input_instruction.hide()
         user_val = self.input_instruction.text()
-        self.progress_anim.resume() # Resume the active step animation
+        if self.progress_anim.state() == QPropertyAnimation.State.Paused:
+            self.progress_anim.resume() # Resume the active step animation
         if self.test_runner:
             self.test_runner.resume_from_user(user_val)
 

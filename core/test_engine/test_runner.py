@@ -81,6 +81,9 @@ class TestRunner(QThread):
             self.set_state(TestState.INIT)
             self.test.setup(self.context)
             
+            # 1.5 Database Session Management
+            self._handle_database_session()
+            
             # 2. RUNNING
             # Safety Pre-Check before transitioning
             if hasattr(self.context, 'safety_manager') and self.context.safety_manager:
@@ -102,6 +105,9 @@ class TestRunner(QThread):
             
             # 4. COMPLETE
             self.set_state(TestState.COMPLETE)
+            
+            # 5. SAVE TO DATABASE
+            self._save_results_to_db()
 
         except Exception as e:
             # ERROR handling
@@ -226,3 +232,55 @@ class TestRunner(QThread):
              return
              
         # The thread should catch the cancel_event in the test loop and raise Exception
+
+    def _handle_database_session(self):
+        """Prompts for meter serial and handles append vs new logic."""
+        if not self.context.database_service:
+            self.logger.warning("Database service not available. Skipping DB session management.")
+            return
+
+        # 1. Prompt for Meter Serial Number
+        serial = self.context.prompt_user_action("Enter Meter Serial Number:", requires_input=True)
+        if not serial:
+            self.logger.warning("No meter serial number provided. DB recording might be incomplete.")
+            return
+        
+        self.context.meter_serial_number = serial
+        test_type = getattr(self.test, "test_identifier", "unknown").lower()
+        
+        # 2. Check for existing records
+        existing_row_id = self.context.database_service.find_latest_incomplete_record(serial, test_type)
+        
+        if existing_row_id:
+            # Prompt user to append
+            response = self.context.prompt_user_action(
+                f"Existing record found for meter {serial}. Append results to this record? (yes/no):", 
+                requires_input=True
+            )
+            if response.lower() in ['yes', 'y', 'true']:
+                self.context.db_row_id = existing_row_id
+                self.logger.info(f"Appending results to existing row ID: {existing_row_id}")
+            else:
+                self.context.db_row_id = self.context.database_service.create_new_record(serial)
+                self.logger.info(f"Created new row ID: {self.context.db_row_id}")
+        else:
+            # Create new record
+            self.context.db_row_id = self.context.database_service.create_new_record(serial)
+            self.logger.info(f"Created new row ID: {self.context.db_row_id}")
+
+    def _save_results_to_db(self):
+        """Saves final test results to the mapped database row."""
+        if not self.context.database_service or not self.context.db_row_id:
+            return
+
+        test_type = getattr(self.test, "test_identifier", "unknown").lower()
+        overall = "PASS" if self.context.test_results.get("success", True) else "FAIL"
+        
+        try:
+            # Save specific test result
+            self.context.database_service.update_test_result(self.context.db_row_id, test_type, overall)
+            # Update overall (could be logic based on all columns, but user asked for simple pass/fail)
+            self.context.database_service.update_test_result(self.context.db_row_id, "overall_results", overall)
+            self.logger.info(f"Results saved to DB for {test_type}.")
+        except Exception as e:
+            self.logger.error(f"Failed to save results to DB: {e}")

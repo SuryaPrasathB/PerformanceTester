@@ -9,6 +9,7 @@ class G2NormalOperationTest(BaseTest):
     This test focuses on verifying the meter's ability to handle prepaid operations 
     and simulating credit depletion over a specific cycle.
     """
+    test_identifier = "g2"
     
     def get_steps(self) -> List[TestStep]:
         return [
@@ -48,7 +49,7 @@ class G2NormalOperationTest(BaseTest):
         # Step 2: Turn On Source (PLC)
         context.start_step("Turn On Source")
         context.update_status("Step 2: Activating physical load source...")
-        hw.control_load(True)
+        hw.plc.write_coil(0, True)
 
         context.start_step("Initial Register Read")
         context.update_status("Step 4: Reading initial meter registers...")

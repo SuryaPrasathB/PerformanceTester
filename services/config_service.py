@@ -30,3 +30,8 @@ class ConfigService:
         """Returns the list of devices from the configuration."""
         config = self.get_config()
         return config.get("devices", [])
+        
+    def get_database_config(self) -> Dict[str, Any]:
+        """Returns the database configuration."""
+        config = self.get_config()
+        return config.get("database", {})

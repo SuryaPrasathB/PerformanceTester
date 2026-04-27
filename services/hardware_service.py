@@ -28,14 +28,40 @@ class HardwareService(QObject):
         }
 
         self.plc_drv = None
-        self.meter_drv = None
+        self.energymeter_drv = None
         self.picoscope_drv = None
+        self.mfm_drv = None
         
         # Logical hardware controllers
         self.plc_controller = None
         self.load_controller = None
         self.safety_manager = None
         self.signal_injection = None
+        
+    @property
+    def plc(self) -> PLCController:
+        """Direct access to PLC controller."""
+        return self.plc_controller
+
+    @property
+    def energymeter(self):
+        """Direct access to the Energy Meter driver."""
+        return self.energymeter_drv
+
+    @property
+    def mfm(self):
+        """Direct access to the MFM (Multi-Function Meter) driver."""
+        return self.mfm_drv
+
+    @property
+    def picoscope(self):
+        """Direct access to the PicoScope driver."""
+        return self.picoscope_drv
+
+    @property
+    def source(self) -> SignalInjection:
+        """Direct access to the Signal Injection / Power Source."""
+        return self.signal_injection
 
     def initialize_all(self):
         """Builds all subcomponents based on available drivers in DeviceManager."""
@@ -43,20 +69,19 @@ class HardwareService(QObject):
         self.hardware_status_update.emit("System", "Initializing Hardware Subsystems...")
         
         # Link drivers dynamically from device_manager 
-        # (Assuming naming convention from device_config)
         self.plc_drv = self.device_manager.drivers.get("PLC1")
-        self.meter_drv = self.device_manager.drivers.get("EnergyMeter1")
+        self.energymeter_drv = self.device_manager.drivers.get("EnergyMeter1")
         self.picoscope_drv = self.device_manager.drivers.get("PicoScope1")
-        # Sensor/Serial can also be mapped
-        sensor_drv = self.device_manager.drivers.get("Sensor1")
+        self.mfm_drv = self.device_manager.drivers.get("Sensor1") # Mapping Sensor1 as MFM
 
         if self.plc_drv:
             self.plc_controller = PLCController(self.plc_drv, self.config)
             self.load_controller = LoadController(self.plc_controller)
             self.safety_manager = SafetyManager(self.plc_controller, self.config)
         
-        if sensor_drv: # Assume we use the generic serial device to control injections
-            self.signal_injection = SignalInjection(sensor_drv, self.config)
+        if self.mfm_drv:
+            # We also use the MFM driver for signal injection control if applicable
+            self.signal_injection = SignalInjection(self.mfm_drv, self.config)
             
         self.hardware_status_update.emit("System", "Initialization Complete")
 
@@ -70,11 +95,11 @@ class HardwareService(QObject):
 
     def get_meter_readings(self) -> dict:
         """Polls meter driver for current V, I, and Energy measurements."""
-        if not self.meter_drv or not self.meter_drv.is_connected:
+        if not self.energymeter_drv or not self.energymeter_drv.is_connected:
             self.logger.warning("Hardware Service: Meter not connected.")
             return {"voltage": 0.0, "current": 0.0}
             
-        data = self.meter_drv.read_data()
+        data = self.energymeter_drv.read_data()
         
         # Ensure data is a dictionary (Mock drivers might return a single value if not updated)
         if not isinstance(data, dict):
@@ -89,13 +114,13 @@ class HardwareService(QObject):
         Reads a list of memory registers from the meter.
         Supports both DLMS OBIS codes and Modbus addresses depending on the driver.
         """
-        if not self.meter_drv or not self.meter_drv.is_connected:
+        if not self.energymeter_drv or not self.energymeter_drv.is_connected:
             self.logger.error("Hardware Service: Meter driver unavailable or disconnected.")
             return {}
 
         results = {}
         for reg in register_list:
-            results[reg] = self.meter_drv.read_data(reg)
+            results[reg] = self.energymeter_drv.read_data(reg)
         return results
 
     def wait_for_current_zero(self, threshold: float = 0.1, timeout_sec: int = 30, context=None) -> bool:
@@ -118,7 +143,7 @@ class HardwareService(QObject):
             current = readings.get("current", 0.0)
             
             # If in mock mode, simulate current drop over time to allow test to progress
-            if self.meter_drv and self.meter_drv.mock_mode:
+            if self.energymeter_drv and self.energymeter_drv.mock_mode:
                 # Decrease mock current by 1A every 2 seconds
                 elapsed = time.time() - start_time
                 current = max(0.0, mock_sim_current - (elapsed * 0.5))

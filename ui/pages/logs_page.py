@@ -13,11 +13,11 @@ class LogsPage(QWidget, Ui_LogsPage):
         # High contrast colors
         theme = self.main_window.current_theme
         if theme == "dark":
-            color = "#E2E8F0" # Slate 200
+            color = "#FFFFFF" 
             if level == "ERROR": color = "#F87171"
             elif level == "WARNING": color = "#FBBF24"
         else:
-            color = "#1E293B" # Slate 800
+            color = "#000000" 
             if level == "ERROR": color = "#DC2626"
             elif level == "WARNING": color = "#D97706"
             
