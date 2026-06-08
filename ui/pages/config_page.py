@@ -8,6 +8,34 @@ from ui.pages.ui_config_page import Ui_ConfigPage
 from models.test_suite_model import TestSuiteModel, TestStepConfig
 import json
 
+
+class StepRegistry:
+    _steps = {
+        "SET_SOURCE": {"desc": "Set Voltage/Current", "params": {"voltage": (float, 240.0), "current": (float, 5.0), "pf": (float, 1.0)}},
+        "TURN_LOAD": {"desc": "Toggle Load ON/OFF", "params": {"state": (bool, True)}},
+        "WAIT": {"desc": "Delay Execution", "params": {"duration_sec": (float, 5.0)}},
+        "READ_METER": {"desc": "Read DLMS/Modbus", "params": {"registers": (str, "")}},
+        "READ_MFM_METER": {"desc": "Read MFM Meter", "params": {"registers": (str, "10, 11")}},
+        "PROMPT_USER": {"desc": "User Interaction", "params": {"message": (str, ""), "requires_input": (bool, False)}},
+        "WAIT_UNTIL_ZERO": {"desc": "Wait for Current Drop", "params": {"threshold": (float, 0.1), "timeout_sec": (int, 30)}},
+        "REPEAT": {"desc": "Loop Sequence", "params": {"start_step": (int, 1), "end_step": (int, 1), "iterations": (int, 3)}}
+    }
+    
+    @classmethod
+    def get_all_types(cls):
+        return list(cls._steps.keys())
+        
+    @classmethod
+    def get_description(cls, stype):
+        return cls._steps.get(stype, {}).get("desc", stype)
+        
+    @classmethod
+    def get_default_params(cls, stype):
+        defaults = {}
+        for k, (t, v) in cls._steps.get(stype, {}).get("params", {}).items():
+            defaults[k] = v
+        return defaults
+
 class StepEditDialog(QDialog):
     """Dialog to add or edit a test step."""
     def __init__(self, parent=None, step_data=None):
@@ -61,7 +89,7 @@ class StepEditDialog(QDialog):
         self.form = QFormLayout()
         
         self.combo_type = QComboBox()
-        self.combo_type.addItems(["SET_SOURCE", "TURN_LOAD", "WAIT", "READ_METER", "PROMPT_USER", "WAIT_UNTIL_ZERO", "REPEAT"])
+        self.combo_type.addItems(StepRegistry.get_all_types())
         self.form.addRow("Step Type:", self.combo_type)
         
         # Dynamic parameter container
@@ -121,6 +149,11 @@ class StepEditDialog(QDialog):
             
         elif stype == "READ_METER":
             reg_input = QLineEdit(); reg_input.setPlaceholderText("Active Energy, Current Credit")
+            self.param_layout.addRow("Registers (comma separated):", reg_input)
+            self.inputs = {"registers": reg_input}
+            
+        elif stype == "READ_MFM_METER":
+            reg_input = QLineEdit(); reg_input.setPlaceholderText("10, 11")
             self.param_layout.addRow("Registers (comma separated):", reg_input)
             self.inputs = {"registers": reg_input}
             
@@ -394,16 +427,8 @@ class ConfigPage(QWidget, Ui_ConfigPage):
         self._apply_styles()
 
     def _setup_palette(self):
-        steps = [
-            ("SET_SOURCE", "Set Voltage/Current"),
-            ("TURN_LOAD", "Toggle Load ON/OFF"),
-            ("WAIT", "Delay Execution"),
-            ("READ_METER", "Read DLMS/Modbus"),
-            ("PROMPT_USER", "User Interaction"),
-            ("WAIT_UNTIL_ZERO", "Wait for Current Drop"),
-            ("REPEAT", "Loop Sequence")
-        ]
-        for stype, desc in steps:
+        for stype in StepRegistry.get_all_types():
+            desc = StepRegistry.get_description(stype)
             item = QListWidgetItem(stype.replace("_", " ").title())
             item.setData(Qt.UserRole, stype)
             item.setToolTip(desc)
@@ -584,8 +609,11 @@ class ConfigPage(QWidget, Ui_ConfigPage):
             parts.append("ON" if params.get("state") else "OFF")
         elif step_type == "WAIT":
             parts.append(f"{params.get('duration_sec', 0)}s")
-        elif step_type == "READ_METER":
-            parts.append(f"Regs: {', '.join(params.get('registers', []))}")
+        elif step_type == "READ_METER" or step_type == "READ_MFM_METER":
+            if isinstance(params.get('registers'), str):
+                 parts.append(f"Regs: {params.get('registers', '')}")
+            else:
+                 parts.append(f"Regs: {', '.join(params.get('registers', []))}")
         elif step_type == "PROMPT_USER":
             parts.append(f"'{params.get('message', '')}'")
             if params.get("requires_input"): parts.append("(Input Req)")
@@ -608,11 +636,7 @@ class ConfigPage(QWidget, Ui_ConfigPage):
 
     def _on_step_dropped(self, step_type, row_idx):
         # Create default parameters for the new step
-        default_params = {}
-        if step_type == "WAIT": default_params = {"duration_sec": 5.0}
-        elif step_type == "SET_SOURCE": default_params = {"voltage": 240.0, "current": 5.0, "pf": 1.0}
-        elif step_type == "TURN_LOAD": default_params = {"state": True}
-        elif step_type == "REPEAT": default_params = {"start_step": 1, "end_step": 1, "iterations": 3}
+        default_params = StepRegistry.get_default_params(step_type)
         
         new_step = {"step_type": step_type, "parameters": default_params}
         self.steps_data.insert(row_idx, new_step)

@@ -72,7 +72,7 @@ class HardwareService(QObject):
         self.plc_drv = self.device_manager.drivers.get("PLC1")
         self.energymeter_drv = self.device_manager.drivers.get("EnergyMeter1")
         self.picoscope_drv = self.device_manager.drivers.get("PicoScope1")
-        self.mfm_drv = self.device_manager.drivers.get("Sensor1") # Mapping Sensor1 as MFM
+        self.mfm_drv = self.device_manager.drivers.get("MFMMeter1") # Using specific MFM Meter
 
         if self.plc_drv:
             self.plc_controller = PLCController(self.plc_drv, self.config)
@@ -121,6 +121,22 @@ class HardwareService(QObject):
         results = {}
         for reg in register_list:
             results[reg] = self.energymeter_drv.read_data(reg)
+        return results
+
+    def read_mfm_registers(self, register_list: list) -> dict:
+        """
+        Reads arbitrary registers from the MFM meter.
+        """
+        if not self.mfm_drv or not self.mfm_drv.is_connected:
+            self.logger.error("Hardware Service: MFM Meter driver unavailable or disconnected.")
+            return {}
+
+        results = {}
+        for reg in register_list:
+            results[reg] = self.mfm_drv.read_data(address=int(reg), count=1)
+            # The modbus driver typically returns a list of values
+            if isinstance(results[reg], list) and len(results[reg]) > 0:
+                results[reg] = results[reg][0]
         return results
 
     def wait_for_current_zero(self, threshold: float = 0.1, timeout_sec: int = 30, context=None) -> bool:

@@ -14,8 +14,8 @@
       "mock": true
     },
     {
-      "name": "Sensor1",
-      "type": "serial",
+      "name": "MFMMeter1",
+      "type": "modbus",
       "port": "COM4",
       "baudrate": 9600,
       "mock": true

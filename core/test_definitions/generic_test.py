@@ -64,9 +64,17 @@ class GenericTest(BaseTest):
                     
             elif stype == "READ_METER":
                 regs = params.get("registers", [])
+                if isinstance(regs, str): regs = [r.strip() for r in regs.split(',') if r.strip()]
                 context.update_status(f"Reading meter registers: {', '.join(regs)}")
                 readings = hw.read_meter_registers(regs)
                 context.update_runtime_value(f"step_{i}_readings", readings)
+
+            elif stype == "READ_MFM_METER":
+                regs = params.get("registers", [])
+                if isinstance(regs, str): regs = [r.strip() for r in regs.split(',') if r.strip()]
+                context.update_status(f"Reading MFM meter registers: {', '.join(regs)}")
+                readings = hw.read_mfm_registers(regs)
+                context.update_runtime_value(f"step_{i}_mfm_readings", readings)
                 
             elif stype == "PROMPT_USER":
                 msg = params.get("message", "Please confirm to continue.")
