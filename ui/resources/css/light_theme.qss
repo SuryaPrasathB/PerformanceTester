@@ -16,6 +16,22 @@ QWidget {
     color: #1E293B;
 }
 
+/* Popups & Dialogs */
+QDialog, QMessageBox {
+    background-color: #FFFFFF;
+    color: #1E293B;
+}
+
+QMessageBox QLabel {
+    color: #1E293B;
+}
+
+QMessageBox QPushButton {
+    background-color: #F1F5F9;
+    color: #0F172A;
+    min-width: 80px;
+}
+
 /* -------------------------------------
    Cards / Panels
 --------------------------------------*/

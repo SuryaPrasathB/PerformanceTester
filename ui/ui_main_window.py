@@ -132,6 +132,26 @@ class Ui_MainWindow(object):
 
         self.verticalLayout_sidebar.addWidget(self.nav_item_reports)
 
+        self.nav_item_config = QFrame(self.frame_sidebar)
+        self.nav_item_config.setObjectName(u"nav_item_config")
+        self.hLayout_config = QHBoxLayout(self.nav_item_config)
+        self.hLayout_config.setSpacing(10)
+        self.hLayout_config.setObjectName(u"hLayout_config")
+        self.hLayout_config.setContentsMargins(10, 0, 0, 0)
+        self.btn_nav_config = QPushButton(self.nav_item_config)
+        self.btn_nav_config.setObjectName(u"btn_nav_config")
+        self.btn_nav_config.setMinimumSize(QSize(50, 50))
+        self.btn_nav_config.setMaximumSize(QSize(50, 50))
+
+        self.hLayout_config.addWidget(self.btn_nav_config)
+
+        self.lbl_nav_config = QLabel(self.nav_item_config)
+        self.lbl_nav_config.setObjectName(u"lbl_nav_config")
+
+        self.hLayout_config.addWidget(self.lbl_nav_config)
+
+        self.verticalLayout_sidebar.addWidget(self.nav_item_config)
+
         self.spacer_sidebar = QSpacerItem(0, 0, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
 
         self.verticalLayout_sidebar.addItem(self.spacer_sidebar)
@@ -225,6 +245,8 @@ class Ui_MainWindow(object):
         self.lbl_nav_debug.setText(QCoreApplication.translate("MainWindow", u"Debug Screen", None))
         self.btn_nav_reports.setText("")
         self.lbl_nav_reports.setText(QCoreApplication.translate("MainWindow", u"Reports", None))
+        self.btn_nav_config.setText("")
+        self.lbl_nav_config.setText(QCoreApplication.translate("MainWindow", u"Test Config", None))
         self.btn_nav_settings.setText("")
         self.lbl_nav_settings.setText(QCoreApplication.translate("MainWindow", u"Settings", None))
         self.lbl_page_title.setText(QCoreApplication.translate("MainWindow", u"Test Dashboard", None))

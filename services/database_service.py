@@ -40,8 +40,11 @@ class DatabaseService:
             raise
 
     def _create_table(self):
-        """Creates the test_results table if it doesn't exist."""
-        table_schema = """
+        """Creates the necessary tables if they don't exist."""
+        cursor = self.connection.cursor()
+        
+        # 1. Test Results Table
+        table_results = """
         CREATE TABLE IF NOT EXISTS test_results (
             id INT AUTO_INCREMENT PRIMARY KEY,
             timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -54,10 +57,123 @@ class DatabaseService:
             overall_results VARCHAR(10)
         )
         """
-        cursor = self.connection.cursor()
-        cursor.execute(table_schema)
+        cursor.execute(table_results)
+
+        # 2. Test Suites Table
+        table_suites = """
+        CREATE TABLE IF NOT EXISTS test_suites (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            name VARCHAR(255) NOT NULL,
+            description TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+        cursor.execute(table_suites)
+
+        # 3. Test Steps Table
+        table_steps = """
+        CREATE TABLE IF NOT EXISTS test_steps (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            suite_id INT NOT NULL,
+            step_type VARCHAR(50) NOT NULL,
+            parameters_json TEXT,
+            weight FLOAT DEFAULT 10.0,
+            estimated_duration FLOAT DEFAULT 5.0,
+            sequence_order INT DEFAULT 0,
+            FOREIGN KEY (suite_id) REFERENCES test_suites(id) ON DELETE CASCADE
+        )
+        """
+        cursor.execute(table_steps)
+        
         self.connection.commit()
         cursor.close()
+
+    # --- Test Suite Management ---
+
+    def get_all_test_suites(self) -> list:
+        """Fetches all test suites from the database."""
+        if not self.connection or not self.connection.is_connected():
+            self.connect()
+            
+        query = "SELECT * FROM test_suites ORDER BY name ASC"
+        cursor = self.connection.cursor(dictionary=True)
+        cursor.execute(query)
+        suites = cursor.fetchall()
+        cursor.close()
+        return suites
+
+    def get_test_suite_steps(self, suite_id: int) -> list:
+        """Fetches all steps for a specific test suite."""
+        if not self.connection or not self.connection.is_connected():
+            self.connect()
+            
+        query = "SELECT * FROM test_steps WHERE suite_id = %s ORDER BY sequence_order ASC"
+        cursor = self.connection.cursor(dictionary=True)
+        cursor.execute(query, (suite_id,))
+        steps = cursor.fetchall()
+        cursor.close()
+        return steps
+
+    def save_test_suite(self, name: str, description: str, steps: list, suite_id: Optional[int] = None) -> int:
+        """Saves or updates a test suite and its steps."""
+        if not self.connection or not self.connection.is_connected():
+            self.connect()
+            
+        cursor = self.connection.cursor()
+        try:
+            if suite_id:
+                # Update existing suite
+                query = "UPDATE test_suites SET name = %s, description = %s WHERE id = %s"
+                cursor.execute(query, (name, description, suite_id))
+                # Clear existing steps to re-insert
+                cursor.execute("DELETE FROM test_steps WHERE suite_id = %s", (suite_id,))
+            else:
+                # Create new suite
+                query = "INSERT INTO test_suites (name, description) VALUES (%s, %s)"
+                cursor.execute(query, (name, description))
+                suite_id = cursor.lastrowid
+            
+            # Insert steps
+            import json
+            step_query = """
+                INSERT INTO test_steps (suite_id, step_type, parameters_json, weight, estimated_duration, sequence_order)
+                VALUES (%s, %s, %s, %s, %s, %s)
+            """
+            for i, step in enumerate(steps):
+                params_json = json.dumps(step.get('parameters', {}))
+                cursor.execute(step_query, (
+                    suite_id, 
+                    step.get('step_type'), 
+                    params_json, 
+                    step.get('weight', 10.0), 
+                    step.get('estimated_duration', 5.0),
+                    i
+                ))
+            
+            self.connection.commit()
+            return suite_id
+        except Exception as e:
+            self.connection.rollback()
+            self.logger.error(f"Failed to save test suite: {e}")
+            raise
+        finally:
+            cursor.close()
+
+    def delete_test_suite(self, suite_id: int):
+        """Deletes a test suite and its steps (via cascade)."""
+        if not self.connection or not self.connection.is_connected():
+            self.connect()
+            
+        cursor = self.connection.cursor()
+        try:
+            cursor.execute("DELETE FROM test_suites WHERE id = %s", (suite_id,))
+            self.connection.commit()
+        except Exception as e:
+            self.connection.rollback()
+            self.logger.error(f"Failed to delete test suite: {e}")
+            raise
+        finally:
+            cursor.close()
 
     def find_latest_incomplete_record(self, serial_number: str, test_type: str) -> Optional[int]:
         """

@@ -1,4 +1,4 @@
-from PySide6.QtWidgets import QWidget
+from PySide6.QtWidgets import QWidget, QTableWidgetItem
 from PySide6.QtCore import Slot, Qt, QPropertyAnimation, QEasingCurve
 from ui.pages.ui_test_page import Ui_TestPage
 
@@ -35,7 +35,22 @@ class TestPage(QWidget, Ui_TestPage):
         self.btn_emergency.clicked.connect(self.main_window.trigger_emergency_stop)
         
     def _populate_tests(self):
+        self.list_tests.clear()
+        # 1. Hardcoded Tests (Legacy/Built-in)
+        item = QTableWidgetItem("G2 Normal Operation Test")
+        item.setData(Qt.UserRole, "builtin_g2")
         self.list_tests.addItem("G2 Normal Operation Test")
+        self.list_tests.item(self.list_tests.count()-1).setData(Qt.UserRole, "builtin_g2")
+        
+        # 2. Dynamic Database Tests
+        try:
+            suites = self.device_manager.database_service.get_all_test_suites()
+            for s in suites:
+                self.list_tests.addItem(s['name'])
+                self.list_tests.item(self.list_tests.count()-1).setData(Qt.UserRole, s['id'])
+        except Exception as e:
+            self.main_window.append_log("ERROR", f"Failed to load dynamic tests: {e}")
+            
         self.list_tests.setCurrentRow(0)
 
     @Slot()
@@ -49,35 +64,61 @@ class TestPage(QWidget, Ui_TestPage):
             return
             
         test_name = selected_items[0].text()
-        if test_name == "G2 Normal Operation Test":
-            from core.test_engine.test_context import TestContext
+        test_id = selected_items[0].data(Qt.UserRole)
+        
+        from core.test_engine.test_context import TestContext
+        from core.test_engine.test_runner import TestRunner
+        context = TestContext(self.device_manager)
+
+        if test_id == "builtin_g2":
             from core.test_definitions.g2_normal_operation import G2NormalOperationTest
-            from core.test_engine.test_runner import TestRunner
-            
-            context = TestContext(self.device_manager)
             test_instance = G2NormalOperationTest()
-            self.test_runner = TestRunner(test_instance, context)
+        else:
+            # Dynamic Test from Database
+            from core.test_definitions.generic_test import GenericTest
+            from models.test_suite_model import TestSuiteModel, TestStepConfig
             
-            self.test_runner.on_state_changed.connect(self.update_test_state)
-            self.test_runner.on_log.connect(self.main_window.append_log)
-            self.test_runner.on_data_update.connect(self.update_test_data)
-            self.test_runner.finished.connect(self.handle_test_finished)
-            self.test_runner.on_user_action_required.connect(self.prompt_user_action)
-            self.test_runner.on_status_update.connect(self.lbl_instruction.setText)
-            self.test_runner.on_step_animate.connect(self.smart_step_animate)
+            # Fetch suite and steps
+            suite_id = int(test_id)
+            db = self.device_manager.database_service
+            suites = db.get_all_test_suites()
+            suite_meta = next((s for s in suites if s['id'] == suite_id), None)
             
-            hw_service = self.test_runner.context.hardware_service
-            if hw_service:
-                hw_service.hardware_status_update.connect(self.main_window.update_hardware_status)
-                hw_service.emergency_triggered.connect(self.main_window.handle_emergency_triggered)
+            if not suite_meta:
+                self.main_window.append_log("ERROR", f"Test suite {suite_id} not found in DB.")
+                return
+                
+            steps_raw = db.get_test_suite_steps(suite_id)
+            suite_model = TestSuiteModel(
+                id=suite_meta['id'],
+                name=suite_meta['name'],
+                description=suite_meta['description'],
+                steps=[TestStepConfig.from_db_row(s) for s in steps_raw]
+            )
+            test_instance = GenericTest(suite_model)
+
+        self.test_runner = TestRunner(test_instance, context)
+        
+        self.test_runner.on_state_changed.connect(self.update_test_state)
+        self.test_runner.on_log.connect(self.main_window.append_log)
+        self.test_runner.on_data_update.connect(self.update_test_data)
+        self.test_runner.finished.connect(self.handle_test_finished)
+        self.test_runner.on_user_action_required.connect(self.prompt_user_action)
+        self.test_runner.on_status_update.connect(self.lbl_instruction.setText)
+        self.test_runner.on_step_animate.connect(self.smart_step_animate)
+        
+        hw_service = self.test_runner.context.hardware_service
+        if hw_service:
+            hw_service.hardware_status_update.connect(self.main_window.update_hardware_status)
+            hw_service.emergency_triggered.connect(self.main_window.handle_emergency_triggered)
             
-            self.btn_start.setEnabled(False)
-            self.btn_stop.setEnabled(True)
-            self.btn_abort.setEnabled(True)
-            self.btn_stop.setText("Pause")
-            self.lbl_instruction.setText("Test running...")
-            self.progress_bar.setValue(0)
-            self.test_runner.start()
+        self.btn_start.setEnabled(False)
+        self.btn_stop.setEnabled(True)
+        self.btn_abort.setEnabled(True)
+        self.btn_stop.setText("Pause")
+        self.lbl_instruction.setText("Test running...")
+        self.progress_bar.setValue(0)
+        self.test_runner.start()
 
     @Slot()
     def toggle_pause_resume(self):
@@ -172,9 +213,9 @@ class TestPage(QWidget, Ui_TestPage):
         """Applies advanced CSS for a high-fidelity look."""
         self.progress_bar.setStyleSheet("""
             QProgressBar {
-                border: 2px solid #334155;
+                border: 1px solid #CBD5E1;
                 border-radius: 12px;
-                background-color: #0F172A;
+                background-color: #F1F5F9;
                 text-align: center;
                 color: transparent; /* Hide text for a cleaner look */
                 height: 24px;

@@ -10,6 +10,7 @@ from ui.pages.logs_page import LogsPage
 from ui.pages.settings_page import SettingsPage
 from ui.pages.debug_page import DebugPage
 from ui.pages.reports_page import ReportsPage
+from ui.pages.config_page import ConfigPage
 
 class MainWindow(QMainWindow, Ui_MainWindow):
     """
@@ -27,12 +28,14 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.settings_page = SettingsPage(device_manager, self)
         self.debug_page = DebugPage()
         self.reports_page = ReportsPage()
+        self.config_page = ConfigPage(device_manager, self)
         
         # 2. Add to Stacked Widget
         self.stacked_widget.addWidget(self.test_page)
         self.stacked_widget.addWidget(self.logs_page)
         self.stacked_widget.addWidget(self.debug_page)
         self.stacked_widget.addWidget(self.reports_page)
+        self.stacked_widget.addWidget(self.config_page)
         self.stacked_widget.addWidget(self.settings_page)
         
         # 3. Sidebar State & Timer
@@ -47,7 +50,10 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self._setup_sidebar_effects()
         self._load_theme()
         
-        # 5. Connect Events
+        # 5. Connect Page Signals for dynamic updates
+        self.config_page.suitesChanged.connect(self.test_page._populate_tests)
+        
+        # 6. Connect Events
         self.frame_sidebar.installEventFilter(self)
         self._animate_sidebar(False, instant=True)
         
@@ -60,13 +66,15 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.btn_nav_logs.clicked.connect(lambda: self._switch_page(2, "System Logs"))
         self.btn_nav_debug.clicked.connect(lambda: self._switch_page(3, "Debug Screen"))
         self.btn_nav_reports.clicked.connect(lambda: self._switch_page(4, "Reports"))
-        self.btn_nav_settings.clicked.connect(lambda: self._switch_page(5, "Settings"))
+        self.btn_nav_config.clicked.connect(lambda: self._switch_page(5, "Test Configuration"))
+        self.btn_nav_settings.clicked.connect(lambda: self._switch_page(6, "Settings"))
         
         # 3. Make the entire frames clickable (via event filters)
         self.nav_item_test.installEventFilter(self)
         self.nav_item_logs.installEventFilter(self)
         self.nav_item_debug.installEventFilter(self)
         self.nav_item_reports.installEventFilter(self)
+        self.nav_item_config.installEventFilter(self)
         self.nav_item_settings.installEventFilter(self)
         
         # Initial page
@@ -76,7 +84,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         """Initializes opacity effects for labels."""
         self.nav_labels = [
             self.lbl_nav_test, self.lbl_nav_logs, self.lbl_nav_debug, 
-            self.lbl_nav_reports, self.lbl_nav_settings
+            self.lbl_nav_reports, self.lbl_nav_config, self.lbl_nav_settings
         ]
         self.label_effects = []
         for lbl in self.nav_labels:
@@ -154,8 +162,10 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 self._switch_page(3, "Debug Screen")
             elif obj == self.nav_item_reports:
                 self._switch_page(4, "Reports")
+            elif obj == self.nav_item_config:
+                self._switch_page(5, "Test Configuration")
             elif obj == self.nav_item_settings:
-                self._switch_page(5, "Settings")
+                self._switch_page(6, "Settings")
                 
         return super().eventFilter(obj, event)
 
@@ -240,6 +250,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             (self.btn_nav_logs, "logs.png"),
             (self.btn_nav_debug, "debug.png"),
             (self.btn_nav_reports, "reports.png"),
+            (self.btn_nav_config, "configuration.png"),
             (self.btn_nav_settings, "settings.png")
         ]
         
@@ -269,7 +280,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             """)
         
         for lbl in self.nav_labels:
-            lbl.setStyleSheet("font-size: 14px; font-weight: 500; color: #94A3B8; padding-left: 0px; margin-left: 0px;")
+            lbl.setStyleSheet("font-size: 14px; font-weight: 500; color: #475569; padding-left: 0px; margin-left: 0px;")
 
     def closeEvent(self, event):
         self.device_manager.cleanup()
