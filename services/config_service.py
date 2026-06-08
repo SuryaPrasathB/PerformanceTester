@@ -35,3 +35,31 @@ class ConfigService:
         """Returns the database configuration."""
         config = self.get_config()
         return config.get("database", {})
+
+    def save_config(self, new_config_data: Dict[str, Any]) -> bool:
+        """Saves the provided configuration dictionary to the JSON file."""
+        try:
+            with open(self.config_path, "w") as f:
+                json.dump(new_config_data, f, indent=2)
+            self._config_data = new_config_data
+            return True
+        except Exception as e:
+            print(f"Error saving config: {e}")
+            return False
+
+    def update_device(self, device_name: str, new_params: Dict[str, Any]) -> bool:
+        """Updates specific parameters of a device and saves the configuration."""
+        config = self.get_config()
+        devices = config.get("devices", [])
+        
+        updated = False
+        for i, dev in enumerate(devices):
+            if dev.get("name") == device_name:
+                devices[i].update(new_params)
+                updated = True
+                break
+                
+        if updated:
+            config["devices"] = devices
+            return self.save_config(config)
+        return False
