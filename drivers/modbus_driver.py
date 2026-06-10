@@ -49,7 +49,7 @@ class ModbusDriver(BaseDriver):
     def read_data(self, address: int = 0, count: int = 1) -> list:
         """Reads holding registers from the Modbus device."""
         if self.mock_mode:
-            self.logger.debug(f"[MOCK] Modbus reading {count} registers from address {address} on {self.ip}:{self.port}.")
+            # self.logger.debug(f"[MOCK] Modbus reading {count} registers from address {address} on {self.ip}:{self.port}.")
             time.sleep(0.1)
             return [0] * count
 
@@ -71,7 +71,7 @@ class ModbusDriver(BaseDriver):
     def write_data(self, address: int, value: int) -> bool:
         """Writes to a single holding register."""
         if self.mock_mode:
-            self.logger.debug(f"[MOCK] Modbus writing value {value} to address {address} on {self.ip}:{self.port}.")
+            # self.logger.debug(f"[MOCK] Modbus writing value {value} to address {address} on {self.ip}:{self.port}.")
             time.sleep(0.1)
             return True
 
