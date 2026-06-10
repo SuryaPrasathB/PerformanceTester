@@ -81,9 +81,6 @@ class TestRunner(QThread):
             self.set_state(TestState.INIT)
             self.test.setup(self.context)
             
-            # 1.5 Database Session Management
-            self._handle_database_session()
-            
             # 2. RUNNING
             # Safety Pre-Check before transitioning
             if hasattr(self.context, 'safety_manager') and self.context.safety_manager:
@@ -107,6 +104,7 @@ class TestRunner(QThread):
             self.set_state(TestState.COMPLETE)
             
             # 5. SAVE TO DATABASE
+            self._handle_database_session()
             self._save_results_to_db()
 
         except Exception as e:

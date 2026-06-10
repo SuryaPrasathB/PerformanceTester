@@ -162,12 +162,12 @@ class SequenceViewerPage(QWidget):
             steps = test_instance.get_steps()
             
             for i, step in enumerate(steps):
-                self._add_step_card(i + 1, step)
+                self._add_step_card(str(i + 1), step, self.steps_layout)
         except Exception as e:
             err = QLabel(f"Error loading test steps: {str(e)}")
             self.steps_layout.addWidget(err)
 
-    def _add_step_card(self, index, step):
+    def _add_step_card(self, prefix, step, parent_layout):
         card = QFrame()
         card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         card.setStyleSheet("""
@@ -188,7 +188,7 @@ class SequenceViewerPage(QWidget):
         layout.setSpacing(10)
         
         # Index Badge
-        idx_badge = QLabel(str(index))
+        idx_badge = QLabel(prefix)
         idx_badge.setFixedSize(30, 30)
         idx_badge.setAlignment(Qt.AlignCenter)
         idx_badge.setFont(QFont("Segoe UI", 12, QFont.Bold))
@@ -241,4 +241,17 @@ class SequenceViewerPage(QWidget):
         layout.addLayout(content_layout)
         layout.setStretch(1, 1)
         
-        self.steps_layout.addWidget(card)
+        parent_layout.addWidget(card)
+        
+        # Render nested steps if any
+        if getattr(step, 'sub_steps', None):
+            sub_container = QFrame()
+            sub_container.setStyleSheet("background: transparent; border-left: 3px solid #CBD5E1; margin-left: 20px;")
+            sub_layout = QVBoxLayout(sub_container)
+            sub_layout.setContentsMargins(15, 5, 0, 10)
+            sub_layout.setSpacing(8)
+            
+            for j, sub_step in enumerate(step.sub_steps):
+                self._add_step_card(f"{prefix}.{j+1}", sub_step, sub_layout)
+                
+            parent_layout.addWidget(sub_container)

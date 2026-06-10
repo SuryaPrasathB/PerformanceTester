@@ -12,6 +12,7 @@ class ExecutableStep:
         self.requires_input = requires_input
         self.details = details
         self.device = device
+        self.sub_steps: List[TestStep] = None
 
 class TestBuilder:
     """
@@ -21,7 +22,13 @@ class TestBuilder:
         self._steps: List[ExecutableStep] = []
 
     def get_steps(self) -> List[TestStep]:
-        return [TestStep(s.name, s.weight, s.estimated_duration, s.requires_input, s.details, s.device) for s in self._steps]
+        steps = []
+        for s in self._steps:
+            ts = TestStep(s.name, s.weight, s.estimated_duration, s.requires_input, s.details, s.device)
+            if s.sub_steps:
+                ts.sub_steps = s.sub_steps
+            steps.append(ts)
+        return steps
 
     def add_step(self, name: str, action: Callable, weight=5, duration=2, requires_input=False, details="", device=""):
         self._steps.append(ExecutableStep(name, action, weight, duration, requires_input, details, device))
@@ -146,6 +153,11 @@ class TestBuilder:
         
     def loop(self, count: int, loop_builder_func: Callable):
         """ Executes a nested sequence 'count' times. """
+        # Capture the sub-steps to display in the UI
+        dummy_builder = TestBuilder()
+        loop_builder_func(dummy_builder, 0)
+        sub_steps_metadata = dummy_builder.get_steps()
+        
         def action(ctx, hw):
             for i in range(count):
                 ctx.update_status(f"Loop {i+1}/{count}")
@@ -157,7 +169,10 @@ class TestBuilder:
                     ctx.check_cancel()
                     ctx.wait_if_paused()
                     step.action(ctx, hw)
-        self.add_step(f"Loop {count} times", action, weight=count*5, duration=count*2) # Rough estimate
+        
+        step_obj = ExecutableStep(f"Loop {count} times", action, weight=count*5, estimated_duration=count*2, device="System")
+        step_obj.sub_steps = sub_steps_metadata
+        self._steps.append(step_obj)
         return self
 
     def custom_action(self, name: str, action_func: Callable):

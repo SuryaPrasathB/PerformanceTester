@@ -1,4 +1,5 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import List, Optional
 
 @dataclass
 class TestStep:
@@ -11,3 +12,4 @@ class TestStep:
     requires_input: bool = False   # True if this step waits for user
     details: str = ""              # Extra context for the UI (like prompt message)
     device: str = ""               # Hardware or software device involved
+    sub_steps: Optional[List['TestStep']] = None # Nested steps (e.g. for loops)
