@@ -2,6 +2,7 @@ from typing import List, Callable, Any
 from core.test_engine.test_step import TestStep
 from core.hardware_mapping import PLCCoil, MFMRegister
 import time
+import threading
 
 class ExecutableStep:
     def __init__(self, name: str, action: Callable, weight: int = 5, estimated_duration: int = 2, requires_input: bool = False, details: str = "", device: str = ""):
@@ -116,6 +117,48 @@ class TestBuilder:
             except AttributeError:
                 ctx.logger.info(f"MOCK: PLC.write_coil({coil.value}, {state})")
         self.add_step(f"Set Coil {coil.name}={'ON' if state else 'OFF'}", action, device="PLC")
+        return self
+
+    def start_power_sequence(self, acb_delay: int = 2):
+        self.set_plc_coil(PLCCoil.ACB_COIL_ADDR, True)
+        self.wait(acb_delay)
+        self.set_plc_coil(PLCCoil.SCR_COIL_ADDR, True)
+        return self
+
+    def stop_power_sequence(self):
+        self.set_plc_coil(PLCCoil.ACB_COIL_ADDR, False)
+        self.set_plc_coil(PLCCoil.SCR_COIL_ADDR, False)
+        return self
+        
+    def start_background_monitor(self, name: str, monitor_func: Callable):
+        def action(ctx, hw):
+            ctx.update_status(f"Starting Background Monitor: {name}")
+            stop_event = threading.Event()
+            ctx.background_tasks_stop_events[name] = stop_event
+            
+            def thread_target():
+                while not stop_event.is_set() and not ctx.cancel_event.is_set():
+                    monitor_func(ctx, hw)
+                    time.sleep(1) # Internal loop delay to prevent pegging CPU
+
+            t = threading.Thread(target=thread_target, daemon=True)
+            ctx.background_tasks[name] = t
+            t.start()
+        self.add_step(f"Start Background Monitor: {name}", action)
+        return self
+
+    def stop_background_monitor(self, name: str):
+        def action(ctx, hw):
+            ctx.update_status(f"Stopping Background Monitor: {name}")
+            stop_event = ctx.background_tasks_stop_events.get(name)
+            if stop_event:
+                stop_event.set()
+                t = ctx.background_tasks.get(name)
+                if t:
+                    t.join(timeout=2)
+                ctx.background_tasks.pop(name, None)
+                ctx.background_tasks_stop_events.pop(name, None)
+        self.add_step(f"Stop Background Monitor: {name}", action)
         return self
 
     def send_meter_command(self, command_key: str):

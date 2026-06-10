@@ -115,10 +115,10 @@ class TestRunner(QThread):
                 self.logger.error(f"Test Error: {str(e)}")
                 self.logger.error(traceback.format_exc())
             
-            # Trigger hardware-level emergency stop on error
-            if hasattr(self.context, 'hardware_service') and self.context.hardware_service:
-                self.logger.warning("Triggering Hardware Emergency Stop due to test error!")
-                self.context.hardware_service.trigger_emergency_stop()
+                # Trigger hardware-level emergency stop on actual error
+                if hasattr(self.context, 'hardware_service') and self.context.hardware_service:
+                    self.logger.warning("Triggering Hardware Emergency Stop due to test error!")
+                    self.context.hardware_service.trigger_emergency_stop()
                 
             try:
                 self.set_state(TestState.ERROR)

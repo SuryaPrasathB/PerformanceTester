@@ -46,10 +46,21 @@ class TestContext:
         self._progress_callback = None
         self._step_callback = None
         
+        # Background Tasks
+        self.background_tasks = {}
+        self.background_tasks_stop_events = {}
+        
     def check_cancel(self):
         """Checks if the test has been cancelled."""
         if self.cancel_event.is_set():
+            self.stop_all_background_tasks()
             raise Exception("Test was cancelled.")
+            
+    def stop_all_background_tasks(self):
+        for name, event in self.background_tasks_stop_events.items():
+            event.set()
+        self.background_tasks.clear()
+        self.background_tasks_stop_events.clear()
             
     def wait_if_paused(self):
         """Blocks execution if the pause event is cleared."""
