@@ -1,0 +1,14 @@
+{
+  "profiles": [
+    {
+      "id": "default_dlms",
+      "name": "Default DLMS Meter",
+      "communication_mode": "DLMS",
+      "commands": {
+        "read_serial_number": {"value": "7E A0 07 03 21 93 0F 01 7E", "format": "Hex"},
+        "close_load_switch": {"value": "7E A0 08 03 21 93 0F 02 7E", "format": "Hex"},
+        "open_load_switch": {"value": "7E A0 09 03 21 93 0F 03 7E", "format": "Hex"}
+      }
+    }
+  ]
+}

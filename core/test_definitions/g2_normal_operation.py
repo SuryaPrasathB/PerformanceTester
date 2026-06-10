@@ -1,112 +1,77 @@
-import time
 from typing import List
 from core.test_definitions.base_test import BaseTest
-from core.test_engine.test_step import TestStep
+from core.test_engine.test_builder import TestBuilder
+from core.hardware_mapping import PLCCoil
 
 class G2NormalOperationTest(BaseTest):
     """
     Implementation of the G2 Normal Operation Test sequence.
-    This test focuses on verifying the meter's ability to handle prepaid operations 
-    and simulating credit depletion over a specific cycle.
     """
-    test_identifier = "g2"
-    
-    def get_steps(self) -> List[TestStep]:
-        return [
-            TestStep("Initialization", weight=5, estimated_duration=2),
-            TestStep("Turn On Source", weight=5, estimated_duration=3),
-            TestStep("Initial Register Read", weight=10, estimated_duration=5),
-            # Cycles (3 total)
-            TestStep("Loop: Credit Prompt", weight=5, estimated_duration=0, requires_input=True),
-            TestStep("Loop: Monitoring Current", weight=10, estimated_duration=15),
-            TestStep("Loop: Credit Prompt", weight=5, estimated_duration=0, requires_input=True),
-            TestStep("Loop: Monitoring Current", weight=10, estimated_duration=15),
-            TestStep("Loop: Credit Prompt", weight=5, estimated_duration=0, requires_input=True),
-            TestStep("Loop: Monitoring Current", weight=10, estimated_duration=15),
-            # Final
-            TestStep("Final Register Read", weight=10, estimated_duration=5),
-            TestStep("Completion", weight=5, estimated_duration=2)
-        ]
+    def __init__(self):
+        super().__init__()
+        # Note: If name/desc are needed, they should be set as properties
+        self.name = "G2 Normal Operation"
+        self.description = "Verify basic operation and energy counting"
 
-    def setup(self, context):
-        context.logger.info("G2 Normal Operation Test - Setup started.")
+    def build(self, builder: TestBuilder):
+        # 1. Prompt User to Set Load to 240V Ic UPF
+        builder.prompt_user("Set Load to 240V Ic UPF", requires_input=False)
         
-        self.v_set = 240.0
-        self.i_set = 10.0
-        self.pf_set = 1.0
-        self.target_registers = ["Active Energy", "Current Credit"]
+        # 2. Turn ON ACB
+        builder.set_plc_coil(PLCCoil.ACB_COIL_ADDR, True)
         
-        self.initial_registers = {}
-        self.final_registers = {}
-
-    def run(self, context):
-        context.logger.info("G2 Normal Operation Test - Execution started.")
+        # 3. 2 sec Delay
+        builder.wait(2)
         
-        context.start_step("Initialization")
-        hw = context.hardware_service
-        hw.inject_signal(self.v_set, self.i_set, self.pf_set)
-
-        # Step 2: Turn On Source (PLC)
-        context.start_step("Turn On Source")
-        context.update_status("Step 2: Activating physical load source...")
-        hw.plc.write_coil(0, True)
-
-        context.start_step("Initial Register Read")
-        context.update_status("Step 4: Reading initial meter registers...")
-        self.initial_registers = hw.read_meter_registers(self.target_registers)
-        context.update_runtime_value("initial_registers", self.initial_registers)
-
-        # Looping Step 3 to 6 (Initial + 2 repeats = 3 total)
-        for i in range(3):
-            context.update_status(f"Cycle {i+1}/3: Starting test loop...")
+        # 4. Turn ON SCR
+        builder.set_plc_coil(PLCCoil.SCR_COIL_ADDR, True)
+        
+        # 5. Read Meter Serial Number
+        builder.send_meter_command("read_serial_number")
+        
+        # 6. Prompt user to enter initial Energy Value
+        builder.prompt_user("Enter Initial Energy Value", requires_input=True, save_as="energy_initial")
+        
+        # Steps 7-10 repeated 3 times
+        def loop_body(sub_builder: TestBuilder, idx: int):
+            # 7. Close Meter Load Switch
+            sub_builder.send_meter_command("close_load_switch")
             
-            # Step 3: Prompt user for amount of credit
-            context.start_step("Loop: Credit Prompt")
-            credit_amount = context.prompt_user_action(
-                f"Cycle {i+1}: Please enter the amount of credit to be added:",
-                requires_input=True
-            )
-            context.logger.info(f"User entered credit: {credit_amount}")
-            context.update_runtime_value(f"cycle_{i+1}_credit", credit_amount)
-
-            # Step 5 & 6: Monitor and Wait until current 0
-            context.start_step("Loop: Monitoring Current")
-            context.update_status(f"Cycle {i+1}/4: Monitoring current until depletion (0A)...")
-            success = hw.wait_for_current_zero(threshold=0.1, timeout_sec=60, context=context)
+            # 8. Measure Current > 0
+            sub_builder.measure_current(min_val=0.1, max_val=100.0)
             
-            if not success:
-                context.logger.error(f"Cycle {i+1} failed: Timeout waiting for current 0.")
-                raise Exception(f"Current did not reach zero in Cycle {i+1}")
+            # 9. Open Load Switch
+            sub_builder.send_meter_command("open_load_switch")
             
-            context.update_status(f"Cycle {i+1}/4: Depletion detected successfully.")
-
-        # Step 7: Read Memory Registers - compare with step 4 read
-        context.start_step("Final Register Read")
-        context.update_status("Step 7: Reading final memory registers for comparison...")
-        self.final_registers = hw.read_meter_registers(self.target_registers)
-        context.update_runtime_value("final_registers", self.final_registers)
+            # 10. Measure Current == 0
+            sub_builder.measure_current(min_val=0.0, max_val=0.05)
+            
+        builder.loop(3, loop_body)
         
-        # Step 8: Complete Test
-        context.start_step("Completion")
-        context.update_status("Step 8: Finalizing test results...")
-
-    def verify(self, context):
-        context.logger.info("G2 Normal Operation Test - Verification started.")
+        # 11. Prompt user to enter final Energy Value
+        builder.prompt_user("Enter Final Energy Value", requires_input=True, save_as="energy_final")
         
-        # Compare initial and final registers
-        results = {"success": True, "details": []}
+        # 12. Show pass fail status & 13. Store Results
+        builder.custom_action("Verify Energy Difference & Store Results", self._verify_and_store)
         
-        for reg in self.target_registers:
-            initial = self.initial_registers.get(reg)
-            final = self.final_registers.get(reg)
-            
-            context.logger.info(f"Register {reg}: Initial={initial}, Final={final}")
-            
-        context.update_runtime_value("test_results", results)
+        # 14. Turn OFF ACB
+        builder.set_plc_coil(PLCCoil.ACB_COIL_ADDR, False)
+        
+        # 15. Turn OFF SCR
+        builder.set_plc_coil(PLCCoil.SCR_COIL_ADDR, False)
 
-    def cleanup(self, context):
-        context.logger.info("G2 Normal Operation Test - Cleanup started.")
-        hw = context.hardware_service
-        if hw:
-            hw.control_load(False)
-            hw.inject_signal(0, 0, 1.0)
+    def _verify_and_store(self, ctx, hw):
+        try:
+            initial = float(ctx.get_runtime_value("energy_initial", 0))
+            final = float(ctx.get_runtime_value("energy_final", 0))
+            
+            # Simple threshold check
+            diff = abs(final - initial)
+            if diff > (initial * 0.01): # > 1% diff
+                ctx.logger.error(f"Test Failed: Energy difference ({diff}) > 1% threshold.")
+            else:
+                ctx.logger.info(f"Test Passed: Energy difference ({diff}) within threshold.")
+            
+            ctx.logger.info("Storing Results in DB...")
+        except ValueError:
+            ctx.logger.error("Test Failed: Invalid energy values entered.")

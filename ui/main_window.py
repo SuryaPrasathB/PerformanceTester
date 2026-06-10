@@ -10,7 +10,8 @@ from ui.pages.logs_page import LogsPage
 from ui.pages.settings_page import SettingsPage
 from ui.pages.debug_page import DebugPage
 from ui.pages.reports_page import ReportsPage
-from ui.pages.config_page import ConfigPage
+from ui.pages.sequence_viewer_page import SequenceViewerPage
+from ui.pages.meter_profiles_page import MeterProfilesPage
 
 class MainWindow(QMainWindow, Ui_MainWindow):
     """
@@ -28,14 +29,17 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.settings_page = SettingsPage(device_manager, self)
         self.debug_page = DebugPage()
         self.reports_page = ReportsPage()
-        self.config_page = ConfigPage(device_manager, self)
+        self.sequence_viewer_page = SequenceViewerPage(device_manager, self)
+        self.meter_profiles_page = MeterProfilesPage(self)
+        self.settings_page = SettingsPage(device_manager, self)
         
         # 2. Add to Stacked Widget
         self.stacked_widget.addWidget(self.test_page)
         self.stacked_widget.addWidget(self.logs_page)
         self.stacked_widget.addWidget(self.debug_page)
         self.stacked_widget.addWidget(self.reports_page)
-        self.stacked_widget.addWidget(self.config_page)
+        self.stacked_widget.addWidget(self.sequence_viewer_page)
+        self.stacked_widget.addWidget(self.meter_profiles_page)
         self.stacked_widget.addWidget(self.settings_page)
         
         # 3. Sidebar State & Timer
@@ -51,11 +55,15 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self._load_theme()
         
         # 5. Connect Page Signals for dynamic updates
-        self.config_page.suitesChanged.connect(self.test_page._populate_tests)
+        # (Config page removed)
         
         # 6. Connect Events
         self.frame_sidebar.installEventFilter(self)
         self._animate_sidebar(False, instant=True)
+        
+        # Hide config navigation -> Now we show it for Sequence Viewer
+        if hasattr(self, 'nav_item_config'):
+            self.nav_item_config.show()
         
     def _setup_navigation(self):
         # 1. Sidebar Toggle (Pancake)
@@ -66,8 +74,12 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.btn_nav_logs.clicked.connect(lambda: self._switch_page(2, "System Logs"))
         self.btn_nav_debug.clicked.connect(lambda: self._switch_page(3, "Debug Screen"))
         self.btn_nav_reports.clicked.connect(lambda: self._switch_page(4, "Reports"))
-        self.btn_nav_config.clicked.connect(lambda: self._switch_page(5, "Test Configuration"))
-        self.btn_nav_settings.clicked.connect(lambda: self._switch_page(6, "Settings"))
+        self.btn_nav_config.clicked.connect(lambda: self._switch_page(5, "Sequence Viewer"))
+        
+        # Dynamically add Meter Profiles navigation
+        self._add_dynamic_nav_item()
+        
+        self.btn_nav_settings.clicked.connect(lambda: self._switch_page(7, "Settings"))
         
         # 3. Make the entire frames clickable (via event filters)
         self.nav_item_test.installEventFilter(self)
@@ -75,16 +87,54 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.nav_item_debug.installEventFilter(self)
         self.nav_item_reports.installEventFilter(self)
         self.nav_item_config.installEventFilter(self)
+        self.nav_item_profiles.installEventFilter(self)
         self.nav_item_settings.installEventFilter(self)
         
         # Initial page
         self._switch_page(1, "Test Dashboard")
 
+    def _add_dynamic_nav_item(self):
+        from PySide6.QtWidgets import QFrame, QHBoxLayout, QPushButton, QLabel, QSizePolicy
+        from PySide6.QtCore import QSize
+        from PySide6.QtGui import QCursor
+        
+        self.nav_item_profiles = QFrame(self.frame_sidebar)
+        self.nav_item_profiles.setObjectName(u"nav_item_profiles")
+        self.nav_item_profiles.setMinimumSize(QSize(0, 50))
+        self.nav_item_profiles.setMaximumSize(QSize(16777215, 50))
+        self.nav_item_profiles.setCursor(QCursor(Qt.PointingHandCursor))
+        self.nav_item_profiles.setStyleSheet(u"QFrame:hover { background-color: rgba(255, 255, 255, 0.05); border-radius: 8px; }")
+        
+        hLayout = QHBoxLayout(self.nav_item_profiles)
+        hLayout.setSpacing(15)
+        hLayout.setObjectName(u"hLayout_profiles")
+        hLayout.setContentsMargins(10, 0, 0, 0)
+        
+        self.btn_nav_profiles = QPushButton(self.nav_item_profiles)
+        self.btn_nav_profiles.setObjectName(u"btn_nav_profiles")
+        self.btn_nav_profiles.setMinimumSize(QSize(50, 50))
+        self.btn_nav_profiles.setMaximumSize(QSize(50, 50))
+        hLayout.addWidget(self.btn_nav_profiles)
+        
+        self.lbl_nav_profiles = QLabel(self.nav_item_profiles)
+        self.lbl_nav_profiles.setObjectName(u"lbl_nav_profiles")
+        self.lbl_nav_profiles.setText("Meter Profiles")
+        sizePolicy = QSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        self.lbl_nav_profiles.setSizePolicy(sizePolicy)
+        hLayout.addWidget(self.lbl_nav_profiles)
+        
+        # Insert before Settings
+        layout = self.frame_sidebar.layout()
+        settings_idx = layout.indexOf(self.nav_item_settings)
+        layout.insertWidget(settings_idx, self.nav_item_profiles)
+        
+        self.btn_nav_profiles.clicked.connect(lambda: self._switch_page(6, "Meter Profiles"))
+
     def _setup_sidebar_effects(self):
         """Initializes opacity effects for labels."""
         self.nav_labels = [
             self.lbl_nav_test, self.lbl_nav_logs, self.lbl_nav_debug, 
-            self.lbl_nav_reports, self.lbl_nav_config, self.lbl_nav_settings
+            self.lbl_nav_reports, self.lbl_nav_config, self.lbl_nav_profiles, self.lbl_nav_settings
         ]
         self.label_effects = []
         for lbl in self.nav_labels:
@@ -163,9 +213,11 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             elif obj == self.nav_item_reports:
                 self._switch_page(4, "Reports")
             elif obj == self.nav_item_config:
-                self._switch_page(5, "Test Configuration")
+                self._switch_page(5, "Sequence Viewer")
+            elif obj == self.nav_item_profiles:
+                self._switch_page(6, "Meter Profiles")
             elif obj == self.nav_item_settings:
-                self._switch_page(6, "Settings")
+                self._switch_page(7, "Settings")
                 
         return super().eventFilter(obj, event)
 
@@ -251,6 +303,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             (self.btn_nav_debug, "debug.png"),
             (self.btn_nav_reports, "reports.png"),
             (self.btn_nav_config, "configuration.png"),
+            (self.btn_nav_profiles, "meter.png"),
             (self.btn_nav_settings, "settings.png")
         ]
         

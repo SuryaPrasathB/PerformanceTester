@@ -36,21 +36,38 @@ class TestPage(QWidget, Ui_TestPage):
         
     def _populate_tests(self):
         self.list_tests.clear()
-        # 1. Hardcoded Tests (Legacy/Built-in)
-        item = QTableWidgetItem("G2 Normal Operation Test")
-        item.setData(Qt.UserRole, "builtin_g2")
-        self.list_tests.addItem("G2 Normal Operation Test")
-        self.list_tests.item(self.list_tests.count()-1).setData(Qt.UserRole, "builtin_g2")
         
-        # 2. Dynamic Database Tests
-        try:
-            suites = self.device_manager.database_service.get_all_test_suites()
-            for s in suites:
-                self.list_tests.addItem(s['name'])
-                self.list_tests.item(self.list_tests.count()-1).setData(Qt.UserRole, s['id'])
-        except Exception as e:
-            self.main_window.append_log("ERROR", f"Failed to load dynamic tests: {e}")
+        # Auto-discover tests
+        import os
+        import importlib
+        import inspect
+        from core.test_definitions.base_test import BaseTest
+        
+        test_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "core", "test_definitions")
+        self.discovered_tests = {}
+        
+        if not os.path.exists(test_dir):
+            return
             
+        for file in os.listdir(test_dir):
+            if file.endswith(".py") and file != "__init__.py" and file != "base_test.py":
+                module_name = f"core.test_definitions.{file[:-3]}"
+                try:
+                    module = importlib.import_module(module_name)
+                    for name, obj in inspect.getmembers(module):
+                        if inspect.isclass(obj) and issubclass(obj, BaseTest) and obj is not BaseTest:
+                            # Use class name nicely formatted
+                            display_name = name.replace("Test", "").replace("([a-z])([A-Z])", r"\1 \2")
+                            # basic naive camel case split
+                            import re
+                            display_name = re.sub(r"([a-z])([A-Z])", r"\1 \2", name)
+                            
+                            self.discovered_tests[name] = obj
+                            self.list_tests.addItem(display_name)
+                            self.list_tests.item(self.list_tests.count()-1).setData(Qt.UserRole, name)
+                except Exception as e:
+                    self.main_window.append_log("ERROR", f"Failed to load test from {file}: {e}")
+                    
         self.list_tests.setCurrentRow(0)
 
     @Slot()
@@ -63,39 +80,18 @@ class TestPage(QWidget, Ui_TestPage):
             self.main_window.append_log("WARNING", "No test selected.")
             return
             
-        test_name = selected_items[0].text()
-        test_id = selected_items[0].data(Qt.UserRole)
+        test_class_name = selected_items[0].data(Qt.UserRole)
         
         from core.test_engine.test_context import TestContext
         from core.test_engine.test_runner import TestRunner
         context = TestContext(self.device_manager)
 
-        if test_id == "builtin_g2":
-            from core.test_definitions.g2_normal_operation import G2NormalOperationTest
-            test_instance = G2NormalOperationTest()
-        else:
-            # Dynamic Test from Database
-            from core.test_definitions.generic_test import GenericTest
-            from models.test_suite_model import TestSuiteModel, TestStepConfig
+        test_class = self.discovered_tests.get(test_class_name)
+        if not test_class:
+            self.main_window.append_log("ERROR", f"Test class {test_class_name} not found.")
+            return
             
-            # Fetch suite and steps
-            suite_id = int(test_id)
-            db = self.device_manager.database_service
-            suites = db.get_all_test_suites()
-            suite_meta = next((s for s in suites if s['id'] == suite_id), None)
-            
-            if not suite_meta:
-                self.main_window.append_log("ERROR", f"Test suite {suite_id} not found in DB.")
-                return
-                
-            steps_raw = db.get_test_suite_steps(suite_id)
-            suite_model = TestSuiteModel(
-                id=suite_meta['id'],
-                name=suite_meta['name'],
-                description=suite_meta['description'],
-                steps=[TestStepConfig.from_db_row(s) for s in steps_raw]
-            )
-            test_instance = GenericTest(suite_model)
+        test_instance = test_class()
 
         self.test_runner = TestRunner(test_instance, context)
         
