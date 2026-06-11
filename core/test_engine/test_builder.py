@@ -126,10 +126,8 @@ class TestBuilder:
             
         return self
 
-    def start_power_sequence(self, acb_delay: int = 0):
+    def start_power_sequence(self):
         self.set_plc_coil(PLCCoil.ACB_COIL_ADDR, True)
-        if acb_delay > 0:
-            self.wait(acb_delay)
         self.set_plc_coil(PLCCoil.SCR_COIL_ADDR, True)
         return self
 
