@@ -166,31 +166,79 @@ class TestPage(QWidget, Ui_TestPage):
     def prompt_user_action(self, message: str, requires_input: bool):
         self.progress_anim.stop() # Freeze animation during user input
         self.lbl_instruction.setText(message)
+        
+        # Clear any existing dynamic buttons
+        if hasattr(self, 'dynamic_buttons'):
+            for btn in self.dynamic_buttons:
+                self.horizontalLayout_input.removeWidget(btn)
+                btn.deleteLater()
+        self.dynamic_buttons = []
+
         if requires_input:
-            self.input_instruction.show()
-            self.input_instruction.clear()
-            self.input_instruction.setEnabled(True)
+            if "U2 or U3" in message or "Select meter category" in message.lower():
+                self.input_instruction.hide()
+                self.btn_done.hide()
+                
+                self.lbl_instruction.setText("Select Meter Category")
+                
+                from PySide6.QtWidgets import QPushButton
+                btn_u2 = QPushButton("U2")
+                btn_u2.setMinimumSize(120, 45)
+                btn_u2.setStyleSheet("font-size: 16px; font-weight: bold; background-color: #3B82F6; color: white; border-radius: 8px;")
+                btn_u2.clicked.connect(lambda checked=False, val="U2": self.resolve_user_action(val))
+                
+                btn_u3 = QPushButton("U3")
+                btn_u3.setMinimumSize(120, 45)
+                btn_u3.setStyleSheet("font-size: 16px; font-weight: bold; background-color: #3B82F6; color: white; border-radius: 8px;")
+                btn_u3.clicked.connect(lambda checked=False, val="U3": self.resolve_user_action(val))
+                
+                idx = self.horizontalLayout_input.indexOf(self.btn_done)
+                self.horizontalLayout_input.insertWidget(idx + 1, btn_u2)
+                self.horizontalLayout_input.insertWidget(idx + 2, btn_u3)
+                
+                self.dynamic_buttons.extend([btn_u2, btn_u3])
+            else:
+                self.input_instruction.show()
+                self.input_instruction.clear()
+                self.input_instruction.setEnabled(True)
+                self.btn_done.show()
+                self.btn_done.setEnabled(True)
+                
+                try:
+                    if self.btn_done.receivers(self.btn_done.clicked) > 0:
+                        self.btn_done.clicked.disconnect()
+                except (TypeError, RuntimeError):
+                    pass
+                self.btn_done.clicked.connect(lambda: self.resolve_user_action())
         else:
             self.input_instruction.hide()
-        self.btn_done.show()
-        self.btn_done.setEnabled(True)
-        # Safely disconnect any previous connections to avoid multiple calls or warnings
-        try:
-            if self.btn_done.receivers(self.btn_done.clicked) > 0:
-                self.btn_done.clicked.disconnect()
-        except (TypeError, RuntimeError):
-            pass
-        self.btn_done.clicked.connect(self.resolve_user_action)
+            self.btn_done.show()
+            self.btn_done.setEnabled(True)
+            try:
+                if self.btn_done.receivers(self.btn_done.clicked) > 0:
+                    self.btn_done.clicked.disconnect()
+            except (TypeError, RuntimeError):
+                pass
+            self.btn_done.clicked.connect(lambda: self.resolve_user_action())
 
     @Slot()
-    def resolve_user_action(self):
+    @Slot(str)
+    def resolve_user_action(self, user_val=None):
         self.btn_done.hide()
         self.input_instruction.hide()
-        user_val = self.input_instruction.text()
+        
+        if hasattr(self, 'dynamic_buttons'):
+            for btn in self.dynamic_buttons:
+                btn.hide()
+                
+        # Handle default parameter or boolean click value
+        if user_val is None or isinstance(user_val, bool):
+            user_val = self.input_instruction.text()
+            
         if self.progress_anim.state() == QPropertyAnimation.State.Paused:
             self.progress_anim.resume() # Resume the active step animation
         if self.test_runner:
-            self.test_runner.resume_from_user(user_val)
+            self.test_runner.resume_from_user(str(user_val))
 
     @Slot(int, int, int)
     def smart_step_animate(self, start_val: int, end_val: int, duration_ms: int):
