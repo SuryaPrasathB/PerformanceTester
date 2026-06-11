@@ -155,15 +155,20 @@ class SettingsPage(QWidget, Ui_SettingsPage):
             
             from core.hardware_mapping import MFMRegister
             try:
-                # read_data usually returns a list of registers
-                data = driver.read_data(address=int(MFMRegister.VOLTAGE_L1), count=1)
-                if data and len(data) > 0:
-                    voltage = data[0]
+                # Use read_float helper if available
+                if hasattr(driver, "read_float"):
+                    voltage = driver.read_float(address=int(MFMRegister.VOLTAGE), function_code=4, swapped=True)
                     btn.setStyleSheet("background-color: #22C55E; color: white; font-weight: bold;")
-                    btn.setText(f"V: {voltage}")
+                    btn.setText(f"V: {voltage:.1f}")
                 else:
-                    btn.setStyleSheet("background-color: #F59E0B; color: white; font-weight: bold;")
-                    btn.setText("No Data")
+                    data = driver.read_data(address=int(MFMRegister.VOLTAGE), count=2)
+                    if data and len(data) > 0:
+                        # Fallback simple float decode or just check data exists
+                        btn.setStyleSheet("background-color: #22C55E; color: white; font-weight: bold;")
+                        btn.setText("Connected")
+                    else:
+                        btn.setStyleSheet("background-color: #F59E0B; color: white; font-weight: bold;")
+                        btn.setText("No Data")
             except Exception as e:
                 btn.setStyleSheet("background-color: #EF4444; color: white; font-weight: bold;")
                 btn.setText("Error")

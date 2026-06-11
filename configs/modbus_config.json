@@ -1,0 +1,37 @@
+{
+  "plc_coils": {
+    "FCMC_TEST_START": 0,
+    "SCCC_TEST_START": 1,
+    "FCMCT_ACK": 2,
+    "ACB_COIL_ADDR": 3,
+    "SCR_COIL_ADDR": 4,
+    "PRE_FUSING_MODE_COIL_ADDR": 5,
+    "PROS_CT_TEST_START": 6
+  },
+  "mfm_meter": {
+    "connection": {
+      "slave_id": 1,
+      "baud_rate": 9600,
+      "data_bits": 8,
+      "parity": "NONE",
+      "stop_bits": 1,
+      "timeout_ms": 1000,
+      "function_code": 4,
+      "length": 6
+    },
+    "registers": {
+      "VOLTAGE": {
+        "address": 40001,
+        "type": "SWAPPED_FLOAT"
+      },
+      "CURRENT": {
+        "address": 40003,
+        "type": "SWAPPED_FLOAT"
+      },
+      "PF": {
+        "address": 40005,
+        "type": "SWAPPED_FLOAT"
+      }
+    }
+  }
+}

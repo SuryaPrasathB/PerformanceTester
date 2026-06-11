@@ -292,15 +292,15 @@ class DebugPage(QWidget, Ui_DebugPage):
         readings_layout = QGridLayout(self.mfm_readings_box)
         readings_layout.setSpacing(15)
         
-        lbl_v = QLabel("Voltage L1 (0x0100):")
+        lbl_v = QLabel(f"Voltage (Reg {int(MFMRegister.VOLTAGE)}):")
         self.lbl_mfm_val_v = QLabel("--- V")
         self.lbl_mfm_val_v.setStyleSheet("font-weight: bold; color: #38BDF8; font-size: 16px;")
         
-        lbl_i = QLabel("Current L1 (0x0101):")
+        lbl_i = QLabel(f"Current (Reg {int(MFMRegister.CURRENT)}):")
         self.lbl_mfm_val_i = QLabel("--- A")
         self.lbl_mfm_val_i.setStyleSheet("font-weight: bold; color: #38BDF8; font-size: 16px;")
         
-        lbl_w = QLabel("Active Power (0x0102):")
+        lbl_w = QLabel(f"Active Power (Calc via PF Reg {int(MFMRegister.PF)}):")
         self.lbl_mfm_val_w = QLabel("--- W")
         self.lbl_mfm_val_w.setStyleSheet("font-weight: bold; color: #38BDF8; font-size: 16px;")
         
@@ -830,19 +830,19 @@ class DebugPage(QWidget, Ui_DebugPage):
         
         if mfm_connected:
             try:
-                v_data = mfm_driver.read_data(address=int(MFMRegister.VOLTAGE_L1), count=1)
-                i_data = mfm_driver.read_data(address=int(MFMRegister.CURRENT_L1), count=1)
-                p_data = mfm_driver.read_data(address=int(MFMRegister.ACTIVE_POWER), count=1)
-                
-                v = v_data[0] if v_data else 0.0
-                i = i_data[0] if i_data else 0.0
-                p = p_data[0] if p_data else 0.0
-                
-                # Mock Mode realism
-                if mfm_driver.mock_mode and v == 0.0:
-                    v = 240.2
-                    i = 5.1
-                    p = v * i * 0.98
+                if hasattr(mfm_driver, "read_float"):
+                    v = mfm_driver.read_float(int(MFMRegister.VOLTAGE), function_code=4, swapped=True)
+                    i = mfm_driver.read_float(int(MFMRegister.CURRENT), function_code=4, swapped=True)
+                    pf = mfm_driver.read_float(int(MFMRegister.PF), function_code=4, swapped=True)
+                    p = v * i * pf
+                else:
+                    v_data = mfm_driver.read_data(address=int(MFMRegister.VOLTAGE), count=1)
+                    i_data = mfm_driver.read_data(address=int(MFMRegister.CURRENT), count=1)
+                    pf_data = mfm_driver.read_data(address=int(MFMRegister.PF), count=1)
+                    v = v_data[0] if v_data else 0.0
+                    i = i_data[0] if i_data else 0.0
+                    pf = pf_data[0] if pf_data else 1.0
+                    p = v * i * pf
                     
                 self.lbl_mfm_val_v.setText(f"{v:.1f} V")
                 self.lbl_mfm_val_i.setText(f"{i:.3f} A")
