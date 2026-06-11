@@ -220,11 +220,7 @@ class SequenceViewerPage(QWidget):
         meta_layout = QHBoxLayout()
         meta_layout.setSpacing(15)
         
-        if step.estimated_duration > 0:
-            dur_lbl = QLabel(f"⏱ Estimated: {step.estimated_duration}s")
-            dur_lbl.setStyleSheet("color: #64748B; font-size: 12px; border: none; background: transparent;")
-            meta_layout.addWidget(dur_lbl)
-            
+
         if step.requires_input:
             inp_lbl = QLabel("⌨ Requires User Input")
             inp_lbl.setStyleSheet("color: #D97706; font-size: 11px; font-weight: bold; border: none; background: transparent;")

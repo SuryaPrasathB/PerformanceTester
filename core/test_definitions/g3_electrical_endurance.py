@@ -58,7 +58,7 @@ class G3ElectricalEnduranceTest(BaseTest):
         builder.prompt_user("Set Load to 240V Ic UPF", requires_input=False)
         
         # 2-3. Turn ON ACB -> Delay -> Turn ON SCR
-        builder.start_power_sequence(acb_delay=2)
+        builder.start_power_sequence()
         
         # 4. Read Meter Serial Number
         builder.send_meter_command("read_serial_number")

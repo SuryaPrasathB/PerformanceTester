@@ -4,6 +4,8 @@ from core.hardware_mapping import PLCCoil, MFMRegister
 import time
 import threading
 
+ACB_OPERATED_DELAY = 5  # Global delay in seconds applied whenever the ACB is operated (ON or OFF)
+
 class ExecutableStep:
     def __init__(self, name: str, action: Callable, weight: int = 5, estimated_duration: int = 2, requires_input: bool = False, details: str = "", device: str = ""):
         self.name = name
@@ -117,11 +119,17 @@ class TestBuilder:
             except AttributeError:
                 ctx.logger.info(f"MOCK: PLC.write_coil({coil.value}, {state})")
         self.add_step(f"Set Coil {coil.name}={'ON' if state else 'OFF'}", action, device="PLC")
+        
+        # Apply global delay whenever ACB is operated
+        if coil == PLCCoil.ACB_COIL_ADDR:
+            self.wait(ACB_OPERATED_DELAY)
+            
         return self
 
-    def start_power_sequence(self, acb_delay: int = 2):
+    def start_power_sequence(self, acb_delay: int = 0):
         self.set_plc_coil(PLCCoil.ACB_COIL_ADDR, True)
-        self.wait(acb_delay)
+        if acb_delay > 0:
+            self.wait(acb_delay)
         self.set_plc_coil(PLCCoil.SCR_COIL_ADDR, True)
         return self
 
