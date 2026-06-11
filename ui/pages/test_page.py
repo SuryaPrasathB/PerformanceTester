@@ -30,6 +30,7 @@ class TestPage(QWidget, Ui_TestPage):
         self.is_milestone_anim = False
         self.dynamic_cards = []
         self.frame_graphs_container.hide()
+        self.horizontalLayout_graphs.setAlignment(Qt.AlignCenter)
 
     def _connect_signals(self):
         self.btn_start.clicked.connect(self.start_test)
@@ -147,6 +148,7 @@ class TestPage(QWidget, Ui_TestPage):
                 self.horizontalLayout_graphs.removeWidget(card)
                 card.deleteLater()
         self.dynamic_cards = []
+        self.lbl_graphs_placeholder.show()
         self.frame_graphs_container.hide()
 
         self.test_runner = TestRunner(test_instance, context)
@@ -338,6 +340,15 @@ class TestPage(QWidget, Ui_TestPage):
     @Slot(str, list, int, int)
     def add_waveform_card(self, name: str, data: list, timebase: int, range_val: int):
         """Appends a newly captured waveform card to the horizontal layout."""
+        # Hide placeholder label when graphs start appearing
+        self.lbl_graphs_placeholder.hide()
+        
+        # Limit the number of graphs to at most 3
+        if len(self.dynamic_cards) >= 3:
+            oldest_card = self.dynamic_cards.pop(0)
+            self.horizontalLayout_graphs.removeWidget(oldest_card)
+            oldest_card.deleteLater()
+            
         self.frame_graphs_container.show()
             
         from ui.widgets.waveform_card import WaveformCard

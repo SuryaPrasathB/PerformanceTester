@@ -232,39 +232,32 @@ class TestRunner(QThread):
         # The thread should catch the cancel_event in the test loop and raise Exception
 
     def _handle_database_session(self):
-        """Prompts for meter serial and handles append vs new logic."""
+        """Resolves meter serial and database row to append/insert without interrupting prompt."""
         if not self.context.database_service:
             self.logger.warning("Database service not available. Skipping DB session management.")
             return
 
-        # 1. Prompt for Meter Serial Number
-        serial = self.context.prompt_user_action("Enter Meter Serial Number:", requires_input=True)
+        serial = str(self.context.meter_serial_number).strip()
         if not serial:
-            self.logger.warning("No meter serial number provided. DB recording might be incomplete.")
-            return
+            profile = getattr(self.context, "meter_profile", None)
+            profile_name = profile.get("name") if profile else None
+            serial = f"METER_{profile_name}" if profile_name else "UNKNOWN_METER"
+            self.context.meter_serial_number = serial
+            self.logger.warning(f"No serial number found in context. Using fallback: {serial}")
         
-        self.context.meter_serial_number = serial
         test_type = getattr(self.test, "test_identifier", "unknown").lower()
         
-        # 2. Check for existing records
+        # Check for existing records
         existing_row_id = self.context.database_service.find_latest_incomplete_record(serial, test_type)
         
         if existing_row_id:
-            # Prompt user to append
-            response = self.context.prompt_user_action(
-                f"Existing record found for meter {serial}. Append results to this record? (yes/no):", 
-                requires_input=True
-            )
-            if response.lower() in ['yes', 'y', 'true']:
-                self.context.db_row_id = existing_row_id
-                self.logger.info(f"Appending results to existing row ID: {existing_row_id}")
-            else:
-                self.context.db_row_id = self.context.database_service.create_new_record(serial)
-                self.logger.info(f"Created new row ID: {self.context.db_row_id}")
+            # Automatically append to existing incomplete record
+            self.context.db_row_id = existing_row_id
+            self.logger.info(f"Automatically appending results to existing incomplete row ID: {existing_row_id} for meter {serial}")
         else:
             # Create new record
             self.context.db_row_id = self.context.database_service.create_new_record(serial)
-            self.logger.info(f"Created new row ID: {self.context.db_row_id}")
+            self.logger.info(f"Created new row ID: {self.context.db_row_id} for meter {serial}")
 
     def _save_results_to_db(self):
         """Saves final test results to the mapped database row."""

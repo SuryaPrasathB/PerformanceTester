@@ -228,6 +228,15 @@ class TestBuilder:
                             
                         ctx.logger.info(f"Received Response: {response.hex().upper() if fmt == 'hex' else response}")
                         
+                        if command_key == "read_serial_number":
+                            try:
+                                serial_str = response.decode('utf-8', errors='ignore').strip()
+                                if serial_str:
+                                    ctx.meter_serial_number = serial_str
+                                    ctx.logger.info(f"Saved read serial number to context: {serial_str}")
+                            except Exception as e:
+                                ctx.logger.warning(f"Could not parse serial number: {e}")
+
                         if exp_resp and exp_resp not in response:
                             ctx.logger.error(f"Expected response '{exp_resp.hex()}' not found in '{response.hex()}'")
                             raise Exception(f"Validation failed: Expected response not found.")
@@ -249,6 +258,13 @@ class TestBuilder:
                     ctx.logger.info(f"Reading DLMS OBIS code: {obis}")
                     res = drv.read_data(obis)
                     ctx.logger.info(f"DLMS Read result: {res}")
+                    
+                    if command_key == "read_serial_number" and res is not None:
+                        if isinstance(res, dict):
+                            ctx.meter_serial_number = "MOCK_DLMS_SERIAL"
+                        else:
+                            ctx.meter_serial_number = str(res).strip()
+                        ctx.logger.info(f"Saved read serial number to context: {ctx.meter_serial_number}")
                     
                     exp_resp = str(cmd_data.get("expected_response", "")).strip()
                     if exp_resp:
@@ -284,16 +300,21 @@ class TestBuilder:
         sub_steps_metadata = dummy_builder.get_steps()
         
         def action(ctx, hw):
-            for i in range(count):
-                ctx.update_status(f"Loop {i+1}/{count}")
-                # Create a temporary builder for the loop body
-                sub_builder = TestBuilder()
-                loop_builder_func(sub_builder, i)
-                # Execute the sub-steps immediately
-                for step in sub_builder._steps:
-                    ctx.check_cancel()
-                    ctx.wait_if_paused()
-                    step.action(ctx, hw)
+            min_duration = ctx.config.get("testing", {}).get("min_step_duration_s", 1.0)
+            loop_id = id(action)
+            ctx.push_loop(loop_id)
+            try:
+                for i in range(count):
+                    ctx.update_status(f"Loop {i+1}/{count}")
+                    ctx.set_loop_iteration(i)
+                    # Create a temporary builder for the loop body
+                    sub_builder = TestBuilder()
+                    loop_builder_func(sub_builder, i)
+                    # Execute the sub-steps immediately
+                    for step in sub_builder._steps:
+                        self._execute_step(ctx, step, hw, min_duration)
+            finally:
+                ctx.pop_loop()
         
         step_obj = ExecutableStep(f"Loop {count} times", action, weight=count*5, estimated_duration=count*2, device="System")
         step_obj.sub_steps = sub_steps_metadata
@@ -304,16 +325,30 @@ class TestBuilder:
         self.add_step(name, action_func)
         return self
 
+    def _execute_step(self, context, step, hw, min_duration):
+        context.check_cancel()
+        context.wait_if_paused()
+        
+        start_time = time.time()
+        try:
+            step.action(context, hw)
+        except Exception as e:
+            context.logger.error(f"Error in step '{step.name}': {e}")
+            raise
+            
+        elapsed = time.time() - start_time
+        remaining = min_duration - elapsed
+        while remaining > 0:
+            context.check_cancel()
+            context.wait_if_paused()
+            sleep_time = min(remaining, 0.1)
+            time.sleep(sleep_time)
+            remaining -= sleep_time
+
     def execute(self, context):
         """ Executed by the TestRunner """
         hw = context.hardware_service
+        min_duration = context.config.get("testing", {}).get("min_step_duration_s", 1.0)
         for i, step in enumerate(self._steps):
             context.start_step(step.name)
-            context.check_cancel()
-            context.wait_if_paused()
-            
-            try:
-                step.action(context, hw)
-            except Exception as e:
-                context.logger.error(f"Error in step '{step.name}': {e}")
-                raise
+            self._execute_step(context, step, hw, min_duration)

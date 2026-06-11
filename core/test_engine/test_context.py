@@ -9,7 +9,10 @@ class TestContext:
     """
     def __init__(self, device_manager, config=None):
         self.device_manager = device_manager
-        self.config = config or {}
+        if config is None and hasattr(device_manager, 'config_service') and device_manager.config_service:
+            self.config = device_manager.config_service.get_config()
+        else:
+            self.config = config or {}
         
         # Phase 3 Hardware Integration
         from services.hardware_service import HardwareService
@@ -50,6 +53,9 @@ class TestContext:
         self.background_tasks = {}
         self.background_tasks_stop_events = {}
         
+        # Loop tracking stack to cache prompt actions on subsequent iterations
+        self.loop_stack = []
+        
     def check_cancel(self):
         """Checks if the test has been cancelled."""
         if self.cancel_event.is_set():
@@ -75,11 +81,47 @@ class TestContext:
         """Gets a runtime value."""
         return self.runtime_values.get(key, default)
 
+    def push_loop(self, loop_id: int):
+        """Pushes a new loop context onto the loop stack."""
+        self.loop_stack.append({
+            'loop_id': loop_id,
+            'iteration': 0,
+            'prompt_index': 0,
+            'prompts_history': {}
+        })
+
+    def pop_loop(self):
+        """Pops the topmost loop context off the loop stack."""
+        if self.loop_stack:
+            self.loop_stack.pop()
+
+    def set_loop_iteration(self, iteration: int):
+        """Sets the current iteration for the active loop, resetting the prompt index."""
+        if self.loop_stack:
+            self.loop_stack[-1]['iteration'] = iteration
+            self.loop_stack[-1]['prompt_index'] = 0
+
     def prompt_user_action(self, instruction_text: str, requires_input: bool = False) -> str:
         """
         Halts test execution and prompts the UI for user interaction.
         Returns the user's string input if requested.
+        
+        If executing inside a loop (iteration > 0), reuses inputs cached from the first iteration.
         """
+        if self.loop_stack:
+            current_loop = self.loop_stack[-1]
+            iteration = current_loop['iteration']
+            prompt_idx = current_loop['prompt_index']
+            
+            if iteration > 0:
+                cached_res = current_loop['prompts_history'].get(prompt_idx)
+                if cached_res is not None:
+                    self.logger.info(f"Loop iteration {iteration+1}: Skipping prompt '{instruction_text}' and using previous input: '{cached_res}'")
+                    current_loop['prompt_index'] += 1
+                    return cached_res
+                else:
+                    self.logger.warning(f"Loop iteration {iteration+1}: Expected cached prompt result at index {prompt_idx} but found none. Prompting user...")
+
         self.logger.info(f"WAITING FOR USER: {instruction_text}")
         
         self.user_action_event.clear()
@@ -96,7 +138,15 @@ class TestContext:
             self.user_action_event.wait(0.5)
             
         self.logger.info("USER ACTION COMPLETED/CONFIRMED.")
-        return self.user_input_result
+        result = self.user_input_result
+        
+        if self.loop_stack:
+            current_loop = self.loop_stack[-1]
+            if current_loop['iteration'] == 0:
+                current_loop['prompts_history'][current_loop['prompt_index']] = result
+            current_loop['prompt_index'] += 1
+            
+        return result
 
     def update_status(self, message: str):
         """Sends a status commentary message to the UI."""

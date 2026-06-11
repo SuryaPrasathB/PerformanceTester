@@ -51,5 +51,8 @@
     "user": "root",
     "password": "lscontrols",
     "database": "meter_test_db"
+  },
+  "testing": {
+    "min_step_duration_s": 1.0
   }
 }
