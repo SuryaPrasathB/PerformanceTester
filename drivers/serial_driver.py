@@ -64,6 +64,28 @@ class SerialDriver(BaseDriver):
             self.logger.error(f"Read error on {self.port}: {e}")
             return b""
 
+    def read_until(self, terminator: bytes, timeout: float = 2.0) -> bytes:
+        """Reads from the serial device until the terminator is found or timeout is reached."""
+        if self.mock_mode:
+            self.logger.debug(f"[MOCK] Serial read_until {terminator} on {self.port}.")
+            time.sleep(0.1)
+            return b"7E A0 07 03 21 93 0F 01 7E" if terminator == b"7E" else b"MOCK_DATA" + terminator
+            
+        if not self.is_connected or not self.serial_conn:
+            self.logger.error(f"Cannot read: Serial not connected to {self.port}.")
+            return b""
+            
+        try:
+            old_timeout = self.serial_conn.timeout
+            self.serial_conn.timeout = timeout
+            data = self.serial_conn.read_until(terminator)
+            self.serial_conn.timeout = old_timeout
+            self.logger.debug(f"Read {len(data)} bytes until terminator from {self.port}.")
+            return data
+        except serial.SerialException as e:
+            self.logger.error(f"Read_until error on {self.port}: {e}")
+            return b""
+
     def write_data(self, data: bytes) -> bool:
         """Writes data to the serial device."""
         if self.mock_mode:

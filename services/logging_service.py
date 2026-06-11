@@ -75,7 +75,7 @@ class LoggingService:
     def _setup_logger(self):
         """Configures the root logger with file, console, and Qt handlers."""
         # Get the root logger
-        self.logger = logging.getLogger("EnergyMeterApp")
+        self.logger = logging.getLogger()
         self.logger.setLevel(logging.DEBUG)
         
         # Prevent adding handlers multiple times if instantiated again

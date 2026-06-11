@@ -3,7 +3,7 @@
     {
       "name": "PLC1",
       "type": "modbus",
-      "ip": "192.168.0.106",
+      "ip": "192.168.0.110",
       "port": "502",
       "mock": true
     },
@@ -20,10 +20,16 @@
       "port": "COM1",
       "baudrate": 9600,
       "mock": true
+    },
+    {
+      "name": "PicoScope1",
+      "type": "picoscope",
+      "port": "USB",
+      "mock": false
     }
   ],
   "plc": {
-    "ip": "192.168.0.106",
+    "ip": "192.168.0.110",
     "coils": {
       "relay_main": 0,
       "fault_trigger": 1,

@@ -15,6 +15,7 @@ class HardwareService(QObject):
     hardware_status_update = Signal(str, str) # module, message
     safety_alert = Signal(str)
     emergency_triggered = Signal()
+    waveform_captured = Signal(str, list, int, int) # name, data, timebase, range
 
     def __init__(self, device_manager, config_service):
         super().__init__()
@@ -73,13 +74,28 @@ class HardwareService(QObject):
         self.energymeter_drv = self.device_manager.drivers.get("EnergyMeter1")
         self.picoscope_drv = self.device_manager.drivers.get("PicoScope1")
         self.mfm_drv = self.device_manager.drivers.get("MFMMeter1") # Using specific MFM Meter
+        self.waveform_counter = 0
+
+        if self.energymeter_drv and not self.energymeter_drv.is_connected:
+            self.logger.info("Hardware Service: Auto-connecting Energy Meter...")
+            self.energymeter_drv.connect()
+            
+        if self.picoscope_drv and not self.picoscope_drv.is_connected:
+            self.logger.info("Hardware Service: Auto-connecting PicoScope...")
+            self.picoscope_drv.connect()
 
         if self.plc_drv:
+            if not self.plc_drv.is_connected:
+                self.logger.info("Hardware Service: Auto-connecting PLC...")
+                self.plc_drv.connect()
             self.plc_controller = PLCController(self.plc_drv, self.config)
             self.load_controller = LoadController(self.plc_controller)
             self.safety_manager = SafetyManager(self.plc_controller, self.config)
         
         if self.mfm_drv:
+            if not self.mfm_drv.is_connected:
+                self.logger.info("Hardware Service: Auto-connecting MFM Meter...")
+                self.mfm_drv.connect()
             # We also use the MFM driver for signal injection control if applicable
             self.signal_injection = SignalInjection(self.mfm_drv, self.config)
             
@@ -92,6 +108,35 @@ class HardwareService(QObject):
             self.load_controller.turn_load_off()
         if self.picoscope_drv:
             self.picoscope_drv.stop_capture()
+
+    def start_waveform_capture(self):
+        """Starts waveform capture block on PicoScope."""
+        if self.picoscope_drv:
+            self.logger.info("Hardware Service: Starting PicoScope capture...")
+            self.picoscope_drv.start_capture()
+        else:
+            self.logger.warning("Hardware Service: Cannot start capture, PicoScope driver not linked.")
+
+    def stop_waveform_capture(self, name: str = None):
+        """Stops waveform capture, retrieves waveform data and emits captured signal."""
+        self.waveform_counter += 1
+        if name is None:
+            name = f"Waveform {self.waveform_counter}"
+            
+        if self.picoscope_drv:
+            self.logger.info(f"Hardware Service: Stopping PicoScope capture for '{name}'...")
+            self.picoscope_drv.stop_capture()
+            data = self.picoscope_drv.get_waveform()
+            if data:
+                timebase = self.picoscope_drv.timebase
+                # RANGE_20V (index 10)
+                voltage_range = 10 
+                self.logger.info(f"Hardware Service: Emitting captured waveform '{name}' with {len(data)} points.")
+                self.waveform_captured.emit(name, data, timebase, voltage_range)
+            else:
+                self.logger.warning("Hardware Service: PicoScope returned empty waveform data.")
+        else:
+            self.logger.warning("Hardware Service: Cannot stop capture, PicoScope driver not linked.")
 
     def get_meter_readings(self) -> dict:
         """Polls meter driver for current V, I, and Energy measurements."""

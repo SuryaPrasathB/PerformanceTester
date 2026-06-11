@@ -103,7 +103,8 @@ class SequenceViewerPage(QWidget):
         """)
         
         self.scroll_content = QWidget()
-        self.scroll_content.setStyleSheet("background: transparent;")
+        self.scroll_content.setObjectName("sequence_scroll_content")
+        self.scroll_content.setStyleSheet("#sequence_scroll_content { background: transparent; }")
         self.steps_layout = QVBoxLayout(self.scroll_content)
         self.steps_layout.setAlignment(Qt.AlignTop)
         self.steps_layout.setSpacing(15)
@@ -128,7 +129,7 @@ class SequenceViewerPage(QWidget):
                     module = importlib.import_module(module_name)
                     for name, obj in inspect.getmembers(module):
                         if inspect.isclass(obj) and issubclass(obj, BaseTest) and obj is not BaseTest:
-                            display_name = re.sub(r"([a-z])([A-Z])", r"\1 \2", name.replace("Test", ""))
+                            display_name = re.sub(r"([a-z0-9])([A-Z])", r"\1 \2", name.replace("Test", ""))
                             self.discovered_tests[name] = obj
                             self.list_tests.addItem(display_name)
                             self.list_tests.item(self.list_tests.count()-1).setData(Qt.UserRole, name)

@@ -27,7 +27,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.test_page = TestPage(device_manager, self)
         self.logs_page = LogsPage(self)
         self.settings_page = SettingsPage(device_manager, self)
-        self.debug_page = DebugPage()
+        self.debug_page = DebugPage(device_manager, self)
         self.reports_page = ReportsPage()
         self.sequence_viewer_page = SequenceViewerPage(device_manager, self)
         self.meter_profiles_page = MeterProfilesPage(self)
@@ -149,6 +149,10 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         # Requirement: Collapse sidebar on page change
         if self.sidebar_expanded:
             self._animate_sidebar(False)
+            
+        # Manage Debug Page polling state dynamically
+        if hasattr(self, 'debug_page') and hasattr(self.debug_page, 'set_active'):
+            self.debug_page.set_active(index == 3)
 
     def _load_theme(self):
         theme_file = "dark_theme.qss" if self.current_theme == "dark" else "light_theme.qss"
@@ -161,6 +165,10 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             
         # Re-apply sidebar state styling
         self._apply_sidebar_style(self.sidebar_expanded)
+        
+        # Update DebugPage styles on theme switch
+        if hasattr(self, 'debug_page') and hasattr(self.debug_page, 'update_theme_styles'):
+            self.debug_page.update_theme_styles()
 
     @Slot()
     def toggle_theme(self):

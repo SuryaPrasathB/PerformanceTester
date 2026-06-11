@@ -54,6 +54,57 @@ class DlmsDriver(BaseDriver):
         self.reader = None
         self.settings = None
 
+    def apply_profile_settings(self, settings: dict):
+        """Applies dynamic settings from a meter profile and forces a reconnect if changed."""
+        changed = False
+        
+        # Helper to process bytes
+        def get_bytes(val):
+            if isinstance(val, str):
+                return val.encode('ascii')
+            return val
+
+        mapping = {
+            "client_address": ("client_address", lambda x: int(x)),
+            "server_address": ("server_address", lambda x: int(x)),
+            "password": ("password", get_bytes),
+            "system_title": ("system_title", get_bytes),
+            "authentication_key": ("auth_key", get_bytes),
+            "block_cipher_key": ("block_cipher_key", get_bytes),
+        }
+        
+        for json_key, (attr_name, converter) in mapping.items():
+            if json_key in settings:
+                try:
+                    new_val = converter(settings[json_key])
+                    if getattr(self, attr_name) != new_val:
+                        setattr(self, attr_name, new_val)
+                        changed = True
+                except Exception as e:
+                    self.logger.warning(f"Failed to apply setting {json_key}: {e}")
+                    
+        # Apply standard and auth level if provided
+        if "authentication" in settings:
+            auth_map = {
+                "none": Authentication.NONE,
+                "low": Authentication.LOW,
+                "high": Authentication.HIGH,
+                "high_md5": Authentication.HIGH_MD5,
+                "high_sha1": Authentication.HIGH_SHA1,
+                "high_gmac": Authentication.HIGH_GMAC,
+                "high_sha256": Authentication.HIGH_SHA256
+            }
+            auth_val = settings["authentication"].lower()
+            if auth_val in auth_map:
+                if not hasattr(self, "_dynamic_auth") or getattr(self, "_dynamic_auth") != auth_map[auth_val]:
+                    self._dynamic_auth = auth_map[auth_val]
+                    changed = True
+
+        if changed and self.is_connected:
+            self.logger.info("DLMS settings changed. Reconnecting...")
+            self.disconnect()
+            self.connect()
+
     def connect(self) -> bool:
         """Establishes DLMS connection."""
         if self.mock_mode:
@@ -83,7 +134,7 @@ class DlmsDriver(BaseDriver):
 
             self.client.clientAddress = self.client_address
             self.client.serverAddress = self.server_address
-            self.client.authentication = Authentication.HIGH
+            self.client.authentication = getattr(self, "_dynamic_auth", Authentication.HIGH)
             self.client.password = self.password
 
             self.client.ciphering.systemTitle = self.system_title

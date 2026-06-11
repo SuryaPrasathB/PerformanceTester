@@ -136,6 +136,60 @@ class DeviceManager(QObject):
             thread.quit()
             thread.wait()
 
+    def switch_device_type(self, device_name: str, new_type: str) -> bool:
+        """
+        Dynamically changes the device driver type (e.g. DLMS <-> Serial)
+        and restarts the worker thread for that device.
+        """
+        if device_name not in self.devices:
+            self.logger.error(f"Cannot switch device type: '{device_name}' not found.")
+            return False
+            
+        model = self.devices[device_name]
+        if model.type.lower() == new_type.lower():
+            return True # Already correct type
+            
+        self.logger.info(f"Switching device '{device_name}' type from '{model.type}' to '{new_type}'...")
+        
+        # 1. Stop existing worker/thread
+        if device_name in self.threads:
+            worker = self.workers[device_name]
+            thread = self.threads[device_name]
+            
+            # Disconnect slot synchronously (Blocking)
+            from PySide6.QtCore import QMetaObject, Qt
+            try:
+                QMetaObject.invokeMethod(worker, "disconnect_device", Qt.BlockingQueuedConnection)
+            except Exception as e:
+                self.logger.warning(f"Error disconnecting '{device_name}' during switch: {e}")
+                
+            thread.quit()
+            thread.wait()
+            
+            worker.deleteLater()
+            thread.deleteLater()
+            
+        # 2. Update model type
+        model.type = new_type
+        
+        # 3. Create new driver
+        driver = self._create_driver(model)
+        if not driver:
+            self.logger.error(f"Failed to create new driver of type '{new_type}' for '{device_name}'.")
+            return False
+            
+        self.drivers[device_name] = driver
+        
+        # 4. Restart thread & worker
+        self._setup_device_thread(device_name, driver)
+        
+        # 5. Connect the new driver asynchronously
+        worker = self.workers[device_name]
+        from PySide6.QtCore import QMetaObject, Qt
+        QMetaObject.invokeMethod(worker, "connect_device", Qt.QueuedConnection)
+        
+        return True
+
     def reload_devices(self):
         """Dynamically reloads devices and their drivers from the current configuration."""
         self.logger.info("Dynamically reloading hardware configurations...")

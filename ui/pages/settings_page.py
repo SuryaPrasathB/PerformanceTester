@@ -107,6 +107,7 @@ class SettingsPage(QWidget, Ui_SettingsPage):
                 
             btn_validate = QPushButton("Validate")
             btn_validate.setFixedWidth(120)
+            btn_validate.clicked.connect(lambda checked=False, name=original_name, btn=btn_validate: self._validate_device(name, btn))
             
             self.scroll_layout.addWidget(lbl_dev, row, 0, Qt.AlignmentFlag.AlignVCenter)
             self.scroll_layout.addWidget(config_widget, row, 1, Qt.AlignmentFlag.AlignVCenter)
@@ -125,6 +126,50 @@ class SettingsPage(QWidget, Ui_SettingsPage):
         # Insert it before the bottom spacer in the existing layout
         count = self.verticalLayout_settings.count()
         self.verticalLayout_settings.insertWidget(count - 1, self.hw_config_box)
+
+    @Slot(str, object)
+    def _validate_device(self, device_name, btn):
+        driver = self.device_manager.drivers.get(device_name)
+        if not driver:
+            QMessageBox.warning(self, "Validation Failed", f"Driver for {device_name} not found.")
+            return
+
+        # Attempt to save current inputs in the UI so driver has the latest details?
+        # The user has to click Save Hardware Config to commit to the file, but we could update driver config here.
+        # For simplicity, we just use the current driver state, or the user should save first.
+
+        if "plc" in device_name.lower():
+            success = driver.connect()
+            if success:
+                btn.setStyleSheet("background-color: #22C55E; color: white; font-weight: bold;")
+                btn.setText("Connected")
+            else:
+                btn.setStyleSheet("background-color: #EF4444; color: white; font-weight: bold;")
+                btn.setText("Failed")
+        elif "mfm" in device_name.lower():
+            success = driver.connect()
+            if not success:
+                btn.setStyleSheet("background-color: #EF4444; color: white; font-weight: bold;")
+                btn.setText("Failed")
+                return
+            
+            from core.hardware_mapping import MFMRegister
+            try:
+                # read_data usually returns a list of registers
+                data = driver.read_data(address=int(MFMRegister.VOLTAGE_L1), count=1)
+                if data and len(data) > 0:
+                    voltage = data[0]
+                    btn.setStyleSheet("background-color: #22C55E; color: white; font-weight: bold;")
+                    btn.setText(f"V: {voltage}")
+                else:
+                    btn.setStyleSheet("background-color: #F59E0B; color: white; font-weight: bold;")
+                    btn.setText("No Data")
+            except Exception as e:
+                btn.setStyleSheet("background-color: #EF4444; color: white; font-weight: bold;")
+                btn.setText("Error")
+                self.main_window.append_log("ERROR", f"MFM Validation error: {e}")
+        else:
+            QMessageBox.information(self, "Validation", "Validation for this device will be implemented later.")
 
     @Slot()
     def _save_hw_config(self):

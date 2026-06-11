@@ -59,9 +59,9 @@ class Ui_TestPage(object):
         self.frame_instruction.setObjectName(u"frame_instruction")
         self.frame_instruction.setFrameShape(QFrame.StyledPanel)
         self.verticalLayout_instr = QVBoxLayout(self.frame_instruction)
-        self.verticalLayout_instr.setSpacing(20)
+        self.verticalLayout_instr.setSpacing(12)
         self.verticalLayout_instr.setObjectName(u"verticalLayout_instr")
-        self.verticalLayout_instr.setContentsMargins(30, 30, 30, 30)
+        self.verticalLayout_instr.setContentsMargins(15, 15, 15, 15)
         self.lbl_instruction = QLabel(self.frame_instruction)
         self.lbl_instruction.setObjectName(u"lbl_instruction")
         self.lbl_instruction.setAlignment(Qt.AlignCenter)
@@ -109,6 +109,24 @@ class Ui_TestPage(object):
 
 
         self.verticalLayout_center.addWidget(self.frame_instruction)
+
+        self.frame_graphs_container = QFrame(self.widget_center_container)
+        self.frame_graphs_container.setObjectName(u"frame_graphs_container")
+        self.frame_graphs_container.setMinimumSize(QSize(16777215, 190))
+        self.frame_graphs_container.setMaximumSize(QSize(16777215, 190))
+        self.frame_graphs_container.setFrameShape(QFrame.StyledPanel)
+        self.horizontalLayout_graphs = QHBoxLayout(self.frame_graphs_container)
+        self.horizontalLayout_graphs.setSpacing(12)
+        self.horizontalLayout_graphs.setObjectName(u"horizontalLayout_graphs")
+        self.horizontalLayout_graphs.setContentsMargins(15, 15, 15, 15)
+        self.lbl_graphs_placeholder = QLabel(self.frame_graphs_container)
+        self.lbl_graphs_placeholder.setObjectName(u"lbl_graphs_placeholder")
+        self.lbl_graphs_placeholder.setAlignment(Qt.AlignCenter)
+
+        self.horizontalLayout_graphs.addWidget(self.lbl_graphs_placeholder)
+
+
+        self.verticalLayout_center.addWidget(self.frame_graphs_container)
 
         self.splitter_workspace.addWidget(self.widget_center_container)
 
@@ -168,6 +186,8 @@ class Ui_TestPage(object):
         self.input_instruction.setPlaceholderText(QCoreApplication.translate("TestPage", u"Awaiting user input...", None))
         self.btn_done.setText(QCoreApplication.translate("TestPage", u"Confirm", None))
         self.lbl_live_data.setText(QCoreApplication.translate("TestPage", u"STATE: IDLE | V: -- V | I: -- A | PF: --", None))
+        self.lbl_graphs_placeholder.setText(QCoreApplication.translate("TestPage", u"Awaiting waveform capture during test sequence...", None))
+        self.lbl_graphs_placeholder.setStyleSheet(QCoreApplication.translate("TestPage", u"color: #94A3B8; font-style: italic; font-size: 14px;", None))
         self.btn_start.setText(QCoreApplication.translate("TestPage", u"\u25b6 Start Test", None))
         self.btn_stop.setText(QCoreApplication.translate("TestPage", u"\u23f8 Pause", None))
         self.btn_abort.setText(QCoreApplication.translate("TestPage", u"\u23f9 Abort", None))
