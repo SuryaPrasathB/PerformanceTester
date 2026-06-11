@@ -158,7 +158,7 @@ class TestPage(QWidget, Ui_TestPage):
         self.test_runner.on_data_update.connect(self.update_test_data)
         self.test_runner.finished.connect(self.handle_test_finished)
         self.test_runner.on_user_action_required.connect(self.prompt_user_action)
-        self.test_runner.on_status_update.connect(self.lbl_instruction.setText)
+        self.test_runner.on_status_update.connect(self.update_status_text)
         self.test_runner.on_step_animate.connect(self.smart_step_animate)
         
         hw_service = self.test_runner.context.hardware_service
@@ -172,6 +172,7 @@ class TestPage(QWidget, Ui_TestPage):
         self.btn_stop.setEnabled(True)
         self.btn_abort.setEnabled(True)
         self.btn_stop.setText("Pause")
+        self.lbl_instruction.setStyleSheet("") # Clear any custom outcome coloring
         self.lbl_instruction.setText("Test running...")
         self.progress_bar.setValue(0)
         self.test_runner.start()
@@ -211,6 +212,11 @@ class TestPage(QWidget, Ui_TestPage):
         state = data.get("state", "RUNNING")
         self.lbl_live_data.setText(f"STATE: {state} | V: {v}V | I: {i}A | PF: {pf}")
         
+    @Slot(str)
+    def update_status_text(self, text: str):
+        self.lbl_instruction.setStyleSheet("") # Clear custom outcome coloring
+        self.lbl_instruction.setText(text)
+
     @Slot()
     def handle_test_finished(self):
         self.progress_anim.stop()
@@ -220,11 +226,38 @@ class TestPage(QWidget, Ui_TestPage):
         self.btn_abort.setEnabled(False)
         self.btn_done.hide()
         self.input_instruction.hide()
-        self.lbl_instruction.setText("Test Complete.")
         self.progress_bar.setValue(100)
+        
+        if not self.test_runner:
+            self.lbl_instruction.setText("Test Complete.")
+            return
+            
+        from core.test_engine.state_machine import TestState
+        state = self.test_runner.state_machine.get_state()
+        serial = str(self.test_runner.context.meter_serial_number).strip() if self.test_runner.context.meter_serial_number else "UNKNOWN"
+        
+        # Determine result and styling
+        if state == TestState.COMPLETE:
+            is_success = self.test_runner.context.test_results.get("success", True)
+            result = "PASS" if is_success else "FAIL"
+            color = "#10B981" # Emerald Green
+        elif state == TestState.ERROR:
+            if self.test_runner.context.cancel_event.is_set():
+                result = "CANCELLED"
+                color = "#F59E0B" # Amber/Orange
+            else:
+                result = "FAIL (ERROR)"
+                color = "#EF4444" # Red
+        else:
+            result = "INCOMPLETE"
+            color = "#64748B" # Slate
+            
+        self.lbl_instruction.setText(f"Test Ended. Result: {result} | Meter Serial: {serial}")
+        self.lbl_instruction.setStyleSheet(f"color: {color}; font-weight: bold; font-size: 24px;")
 
     @Slot(str, bool)
     def prompt_user_action(self, message: str, requires_input: bool):
+        self.lbl_instruction.setStyleSheet("") # Clear outcome color
         self.progress_anim.stop() # Freeze animation during user input
         self.lbl_instruction.setText(message)
         

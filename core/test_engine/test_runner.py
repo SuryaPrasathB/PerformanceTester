@@ -75,6 +75,7 @@ class TestRunner(QThread):
     def run(self):
         """Main execution thread."""
         self._is_running = True
+        outcome = "FAIL"
         
         try:
             # 1. INIT
@@ -103,17 +104,19 @@ class TestRunner(QThread):
             # 4. COMPLETE
             self.set_state(TestState.COMPLETE)
             
-            # 5. SAVE TO DATABASE
-            self._handle_database_session()
-            self._save_results_to_db()
+            # Save outcomes
+            is_success = self.context.test_results.get("success", True)
+            outcome = "PASS" if is_success else "FAIL"
 
         except Exception as e:
             # ERROR handling
-            if "cancelled" in str(e).lower():
+            if "cancelled" in str(e).lower() or self.context.cancel_event.is_set():
                 self.logger.warning(f"Test cancelled: {str(e)}")
+                outcome = "CANCELLED"
             else:
                 self.logger.error(f"Test Error: {str(e)}")
                 self.logger.error(traceback.format_exc())
+                outcome = "FAIL"
             
                 # Trigger hardware-level emergency stop on actual error
                 if hasattr(self.context, 'hardware_service') and self.context.hardware_service:
@@ -127,6 +130,10 @@ class TestRunner(QThread):
 
         finally:
             self._is_running = False
+            
+            # 5. DB proper closure: Save final result to database
+            self._finalize_test_in_db(outcome)
+            
             # CLEANUP (Must happen even on error)
             try:
                 self.logger.info("Executing final cleanup...")
@@ -259,19 +266,16 @@ class TestRunner(QThread):
             self.context.db_row_id = self.context.database_service.create_new_record(serial)
             self.logger.info(f"Created new row ID: {self.context.db_row_id} for meter {serial}")
 
-    def _save_results_to_db(self):
-        """Saves final test results to the mapped database row."""
-        if not self.context.database_service or not self.context.db_row_id:
-            return
-
-        test_type = getattr(self.test, "test_identifier", "unknown").lower()
-        overall = "PASS" if self.context.test_results.get("success", True) else "FAIL"
-        
+    def _finalize_test_in_db(self, outcome: str):
+        """Ensures database row is resolved and updated with the final test outcome."""
         try:
-            # Save specific test result
-            self.context.database_service.update_test_result(self.context.db_row_id, test_type, overall)
-            # Update overall (could be logic based on all columns, but user asked for simple pass/fail)
-            self.context.database_service.update_test_result(self.context.db_row_id, "overall_results", overall)
-            self.logger.info(f"Results saved to DB for {test_type}.")
+            self._handle_database_session()
+            if self.context.database_service and self.context.db_row_id:
+                test_type = getattr(self.test, "test_identifier", "unknown").lower()
+                valid_columns = ['g2', 'g3', 'g5', 'g6', 'g7']
+                if test_type in valid_columns:
+                    self.context.database_service.update_test_result(self.context.db_row_id, test_type, outcome)
+                self.context.database_service.update_test_result(self.context.db_row_id, "overall_results", outcome)
+                self.logger.info(f"Database record updated with final outcome: {outcome}")
         except Exception as e:
-            self.logger.error(f"Failed to save results to DB: {e}")
+            self.logger.error(f"Error during database finalization: {e}")
