@@ -1,7 +1,6 @@
-from PySide6.QtWidgets import QWidget, QPushButton
-from PySide6.QtCore import Slot
+from PySide6.QtWidgets import QWidget, QPushButton, QGroupBox, QVBoxLayout, QHBoxLayout, QGridLayout, QScrollArea, QFormLayout, QCheckBox, QLineEdit, QMessageBox, QComboBox, QLabel
+from PySide6.QtCore import Slot, Qt
 from ui.pages.ui_settings_page import Ui_SettingsPage
-from PySide6.QtWidgets import QGroupBox, QVBoxLayout, QScrollArea, QFormLayout, QCheckBox, QLineEdit, QMessageBox
 
 
 class SettingsPage(QWidget, Ui_SettingsPage):
@@ -21,8 +20,13 @@ class SettingsPage(QWidget, Ui_SettingsPage):
         
         self.scroll = QScrollArea()
         self.scroll.setWidgetResizable(True)
+        self.scroll.setStyleSheet("QScrollArea { border: none; background-color: transparent; }")
+        
         self.scroll_widget = QWidget()
-        self.scroll_layout = QVBoxLayout(self.scroll_widget)
+        self.scroll_widget.setObjectName("scroll_widget")
+        self.scroll_widget.setStyleSheet("#scroll_widget { background-color: transparent; }")
+        self.scroll_layout = QGridLayout(self.scroll_widget)
+        self.scroll_layout.setSpacing(20)
         self.scroll.setWidget(self.scroll_widget)
         self.hw_config_layout.addWidget(self.scroll)
         
@@ -31,28 +35,88 @@ class SettingsPage(QWidget, Ui_SettingsPage):
         config = self.device_manager.config_service.get_config()
         devices = config.get("devices", [])
         
+        # Sort devices: PLC, Energy Meter, MFM Meter
+        def get_order(dev):
+            name = dev.get('name', '').lower()
+            if 'plc' in name: return 0
+            if 'energymeter' in name: return 1
+            if 'mfmmeter' in name: return 2
+            return 99
+            
+        devices = sorted(devices, key=get_order)
+        
+        row = 0
+        
+        # Headers
+        headers = ["Device", "Configuration", "Action"]
+        for i, text in enumerate(headers):
+            lbl = QLabel(text)
+            lbl.setStyleSheet("font-weight: bold; color: #94A3B8; text-transform: uppercase; padding-bottom: 8px;")
+            self.scroll_layout.addWidget(lbl, row, i)
+        row += 1
+        
         for dev in devices:
-            dev_group = QGroupBox(f"{dev.get('name', 'Unknown')} ({dev.get('type', 'Unknown')})")
-            form = QFormLayout()
+            original_name = dev.get('name', 'Unknown')
+            if 'picoscope' in original_name.lower() or dev.get('type', '').lower() == 'picoscope':
+                continue
+                
+            display_name = original_name[:-1] if original_name.endswith('1') else original_name
+            device_type = dev.get('type', 'Unknown')
+            
+            lbl_dev = QLabel(display_name)
+            lbl_dev.setStyleSheet("font-weight: bold;")
+            lbl_dev.setAlignment(Qt.AlignmentFlag.AlignVCenter)
+            
+            config_widget = QWidget()
+            config_layout = QHBoxLayout(config_widget)
+            config_layout.setContentsMargins(0, 0, 0, 0)
+            config_layout.setSpacing(15)
+            config_layout.setAlignment(Qt.AlignmentFlag.AlignVCenter)
             
             inputs = {}
             for key, val in dev.items():
-                if key in ['name', 'type']:
+                if key in ['name', 'type', 'mock']:
                     continue
                 
-                if isinstance(val, bool) or key == 'mock':
-                    cb = QCheckBox()
-                    cb.setChecked(bool(val))
-                    form.addRow(f"{key}:", cb)
-                    inputs[key] = cb
+                display_key = "IP" if key.lower() == 'ip' else key.capitalize()
+                lbl_prop = QLabel(f"{display_key}:")
+                lbl_prop.setAlignment(Qt.AlignmentFlag.AlignVCenter)
+                
+                if key == 'port' and ('serial' in dev.get('type', '') or 'modbus' in dev.get('type', '') or 'dlms' in dev.get('type', '')):
+                    import serial.tools.list_ports
+                    cb = QComboBox()
+                    available_ports = [port.device for port in serial.tools.list_ports.comports()]
+                    current_val = str(val)
+                    if current_val and current_val not in available_ports:
+                        available_ports.append(current_val)
+                    cb.addItems(available_ports)
+                    cb.setCurrentText(current_val)
+                    cb.setMinimumWidth(120)
+                    input_widget = cb
                 else:
                     le = QLineEdit(str(val))
-                    form.addRow(f"{key}:", le)
-                    inputs[key] = le
+                    le.setMinimumWidth(120)
+                    le.setMaximumWidth(200)
+                    input_widget = le
                     
-            dev_group.setLayout(form)
-            self.scroll_layout.addWidget(dev_group)
-            self.device_forms.append((dev.get('name'), dev.get('type'), inputs))
+                config_layout.addWidget(lbl_prop)
+                config_layout.addWidget(input_widget)
+                inputs[key] = input_widget
+                
+            config_layout.addStretch()
+                
+            btn_validate = QPushButton("Validate")
+            btn_validate.setFixedWidth(120)
+            
+            self.scroll_layout.addWidget(lbl_dev, row, 0, Qt.AlignmentFlag.AlignVCenter)
+            self.scroll_layout.addWidget(config_widget, row, 1, Qt.AlignmentFlag.AlignVCenter)
+            self.scroll_layout.addWidget(btn_validate, row, 2, Qt.AlignmentFlag.AlignVCenter)
+            
+            row += 1
+            self.device_forms.append((original_name, dev.get('type'), inputs))
+                
+        self.scroll_layout.setColumnStretch(3, 1)
+        self.scroll_layout.setRowStretch(row, 1)
             
         self.btn_save_hw = QPushButton("Save Hardware Config")
         self.btn_save_hw.clicked.connect(self._save_hw_config)
@@ -66,13 +130,18 @@ class SettingsPage(QWidget, Ui_SettingsPage):
     def _save_hw_config(self):
         config_service = self.device_manager.config_service
         config = config_service.get_config()
+        original_devices = {d.get('name'): d for d in config.get("devices", [])}
         
         new_devices = []
         for name, dtype, inputs in self.device_forms:
-            dev = {"name": name, "type": dtype}
+            dev = original_devices.get(name, {}).copy()
+            dev["name"] = name
+            dev["type"] = dtype
             for key, widget in inputs.items():
                 if isinstance(widget, QCheckBox):
                     dev[key] = widget.isChecked()
+                elif isinstance(widget, QComboBox):
+                    dev[key] = widget.currentText()
                 else:
                     val = widget.text()
                     # Try to infer type
@@ -91,7 +160,11 @@ class SettingsPage(QWidget, Ui_SettingsPage):
             import json
             with open(config_service.config_path, 'w') as f:
                 json.dump(config, f, indent=2)
-            QMessageBox.information(self, "Success", "Hardware configuration saved. Restart the application for changes to take effect fully.")
+                
+            # Reload dynamically
+            self.device_manager.reload_devices()
+            
+            # QMessageBox.information(self, "Success", "Hardware configuration saved and devices reloaded dynamically.")
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to save configuration: {e}")
 

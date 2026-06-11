@@ -135,3 +135,29 @@ class DeviceManager(QObject):
         for device_name, thread in self.threads.items():
             thread.quit()
             thread.wait()
+
+    def reload_devices(self):
+        """Dynamically reloads devices and their drivers from the current configuration."""
+        self.logger.info("Dynamically reloading hardware configurations...")
+        
+        # Disconnect and stop all current threads safely
+        for device_name, worker in self.workers.items():
+            from PySide6.QtCore import QMetaObject, Qt
+            # We use QueuedConnection and allow them to finish naturally, or Blocking if needed.
+            # Using BlockingQueuedConnection ensures it disconnects before thread quits.
+            try:
+                QMetaObject.invokeMethod(worker, "disconnect_device", Qt.BlockingQueuedConnection)
+            except Exception as e:
+                self.logger.warning(f"Error disconnecting {device_name} during reload: {e}")
+                
+        for device_name, thread in self.threads.items():
+            thread.quit()
+            thread.wait()
+            
+        self.devices.clear()
+        self.drivers.clear()
+        self.threads.clear()
+        self.workers.clear()
+        
+        self._initialize_devices()
+        self.logger.info("Hardware configurations reloaded successfully.")

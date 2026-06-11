@@ -81,6 +81,38 @@ QLabel#lbl_live_data {
 /* -------------------------------------
    Inputs & Lists
 --------------------------------------*/
+QComboBox {
+    background-color: #0F172A;
+    border: 2px solid #334155;
+    border-radius: 8px;
+    padding: 4px 16px;
+    font-size: 16px;
+    color: #F8FAFC;
+    min-height: 28px;
+}
+
+QComboBox:focus {
+    border: 2px solid #38BDF8;
+    background-color: #131E30;
+}
+
+QComboBox::drop-down {
+    subcontrol-origin: padding;
+    subcontrol-position: top right;
+    width: 20px;
+    border-left: none;
+}
+
+QComboBox QAbstractItemView {
+    background-color: #1E293B;
+    border: 1px solid #334155;
+    border-radius: 4px;
+    selection-background-color: #0284C7;
+    selection-color: #FFFFFF;
+    color: #F8FAFC;
+    outline: none;
+}
+
 QLineEdit {
     background-color: #0F172A;
     border: 2px solid #334155;
@@ -131,6 +163,26 @@ QHeaderView::section {
     border: none;
     border-bottom: 1px solid #334155;
     padding: 6px;
+}
+
+/* -------------------------------------
+   Group Box
+--------------------------------------*/
+QGroupBox {
+    font-weight: bold;
+    border: 1px solid #334155;
+    border-radius: 8px;
+    margin-top: 12px;
+    padding-top: 24px;
+    background-color: #1E293B;
+}
+
+QGroupBox::title {
+    subcontrol-origin: margin;
+    subcontrol-position: top left;
+    padding: 0 5px;
+    left: 10px;
+    color: #94A3B8;
 }
 
 /* -------------------------------------
