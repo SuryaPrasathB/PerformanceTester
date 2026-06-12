@@ -85,6 +85,22 @@
            <number>15</number>
           </property>
           <item>
+           <spacer name="verticalSpacer_top">
+            <property name="orientation">
+             <enum>Qt::Vertical</enum>
+            </property>
+            <property name="sizeType">
+             <enum>QSizePolicy::Expanding</enum>
+            </property>
+            <property name="sizeHint" stdset="0">
+             <size>
+              <width>20</width>
+              <height>40</height>
+             </size>
+            </property>
+           </spacer>
+          </item>
+          <item>
            <widget class="QLabel" name="lbl_instruction">
             <property name="text">
              <string>Select a test suite from the left and press Start to begin.</string>
@@ -142,14 +158,20 @@
            </layout>
           </item>
           <item>
-           <widget class="QLabel" name="lbl_live_data">
-            <property name="text">
-             <string>STATE: IDLE | V: -- V | I: -- A | PF: --</string>
+           <spacer name="verticalSpacer_bottom">
+            <property name="orientation">
+             <enum>Qt::Vertical</enum>
             </property>
-            <property name="alignment">
-             <set>Qt::AlignCenter</set>
+            <property name="sizeType">
+             <enum>QSizePolicy::Expanding</enum>
             </property>
-           </widget>
+            <property name="sizeHint" stdset="0">
+             <size>
+              <width>20</width>
+              <height>40</height>
+             </size>
+            </property>
+           </spacer>
           </item>
           <item>
            <widget class="QProgressBar" name="progress_bar">
@@ -172,13 +194,13 @@
          <property name="minimumSize">
           <size>
            <width>16777215</width>
-           <height>190</height>
+           <height>280</height>
           </size>
          </property>
          <property name="maximumSize">
           <size>
            <width>16777215</width>
-           <height>190</height>
+           <height>280</height>
           </size>
          </property>
          <property name="frameShape">
@@ -289,6 +311,16 @@
          <enum>Qt::Horizontal</enum>
         </property>
        </spacer>
+      </item>
+      <item>
+       <widget class="QLabel" name="lbl_live_data">
+        <property name="text">
+         <string>STATE: IDLE | V: -- V | I: -- A | PF: --</string>
+        </property>
+        <property name="alignment">
+         <set>Qt::AlignCenter</set>
+        </property>
+       </widget>
       </item>
       <item>
        <widget class="QPushButton" name="btn_emergency">

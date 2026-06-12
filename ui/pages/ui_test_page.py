@@ -62,6 +62,10 @@ class Ui_TestPage(object):
         self.verticalLayout_instr.setSpacing(12)
         self.verticalLayout_instr.setObjectName(u"verticalLayout_instr")
         self.verticalLayout_instr.setContentsMargins(15, 15, 15, 15)
+        self.verticalSpacer_top = QSpacerItem(20, 40, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
+
+        self.verticalLayout_instr.addItem(self.verticalSpacer_top)
+
         self.lbl_instruction = QLabel(self.frame_instruction)
         self.lbl_instruction.setObjectName(u"lbl_instruction")
         self.lbl_instruction.setAlignment(Qt.AlignCenter)
@@ -94,11 +98,9 @@ class Ui_TestPage(object):
 
         self.verticalLayout_instr.addLayout(self.horizontalLayout_input)
 
-        self.lbl_live_data = QLabel(self.frame_instruction)
-        self.lbl_live_data.setObjectName(u"lbl_live_data")
-        self.lbl_live_data.setAlignment(Qt.AlignCenter)
+        self.verticalSpacer_bottom = QSpacerItem(20, 40, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
 
-        self.verticalLayout_instr.addWidget(self.lbl_live_data)
+        self.verticalLayout_instr.addItem(self.verticalSpacer_bottom)
 
         self.progress_bar = QProgressBar(self.frame_instruction)
         self.progress_bar.setObjectName(u"progress_bar")
@@ -112,8 +114,8 @@ class Ui_TestPage(object):
 
         self.frame_graphs_container = QFrame(self.widget_center_container)
         self.frame_graphs_container.setObjectName(u"frame_graphs_container")
-        self.frame_graphs_container.setMinimumSize(QSize(16777215, 190))
-        self.frame_graphs_container.setMaximumSize(QSize(16777215, 190))
+        self.frame_graphs_container.setMinimumSize(QSize(16777215, 280))
+        self.frame_graphs_container.setMaximumSize(QSize(16777215, 280))
         self.frame_graphs_container.setFrameShape(QFrame.StyledPanel)
         self.horizontalLayout_graphs = QHBoxLayout(self.frame_graphs_container)
         self.horizontalLayout_graphs.setSpacing(12)
@@ -165,6 +167,12 @@ class Ui_TestPage(object):
 
         self.horizontalLayout_footer.addItem(self.spacer_footer)
 
+        self.lbl_live_data = QLabel(self.frame_footer)
+        self.lbl_live_data.setObjectName(u"lbl_live_data")
+        self.lbl_live_data.setAlignment(Qt.AlignCenter)
+
+        self.horizontalLayout_footer.addWidget(self.lbl_live_data)
+
         self.btn_emergency = QPushButton(self.frame_footer)
         self.btn_emergency.setObjectName(u"btn_emergency")
         self.btn_emergency.setMinimumSize(QSize(180, 40))
@@ -185,12 +193,12 @@ class Ui_TestPage(object):
         self.lbl_instruction.setText(QCoreApplication.translate("TestPage", u"Select a test suite from the left and press Start to begin.", None))
         self.input_instruction.setPlaceholderText(QCoreApplication.translate("TestPage", u"Awaiting user input...", None))
         self.btn_done.setText(QCoreApplication.translate("TestPage", u"Confirm", None))
-        self.lbl_live_data.setText(QCoreApplication.translate("TestPage", u"STATE: IDLE | V: -- V | I: -- A | PF: --", None))
         self.lbl_graphs_placeholder.setText(QCoreApplication.translate("TestPage", u"Awaiting waveform capture during test sequence...", None))
         self.lbl_graphs_placeholder.setStyleSheet(QCoreApplication.translate("TestPage", u"color: #94A3B8; font-style: italic; font-size: 14px;", None))
         self.btn_start.setText(QCoreApplication.translate("TestPage", u"\u25b6 Start Test", None))
         self.btn_stop.setText(QCoreApplication.translate("TestPage", u"\u23f8 Pause", None))
         self.btn_abort.setText(QCoreApplication.translate("TestPage", u"\u23f9 Abort", None))
+        self.lbl_live_data.setText(QCoreApplication.translate("TestPage", u"STATE: IDLE | V: -- V | I: -- A | PF: --", None))
         self.btn_emergency.setText(QCoreApplication.translate("TestPage", u"\u26a0 EMERGENCY STOP", None))
         pass
     # retranslateUi

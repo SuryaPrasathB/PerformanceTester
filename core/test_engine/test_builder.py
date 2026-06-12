@@ -76,12 +76,32 @@ class TestBuilder:
 
     def wait(self, seconds: int):
         def action(ctx, hw):
-            ctx.update_status(f"Waiting for {seconds} seconds...")
-            start = time.time()
-            while (time.time() - start) < seconds:
+            import math
+            start_time = time.time()
+            total_duration = float(seconds)
+            last_reported = -1
+            
+            while True:
                 ctx.check_cancel()
+                
+                pre_pause = time.time()
                 ctx.wait_if_paused()
-                time.sleep(0.5)
+                post_pause = time.time()
+                pause_duration = post_pause - pre_pause
+                if pause_duration > 0.05:
+                    start_time += pause_duration
+                
+                elapsed = time.time() - start_time
+                remaining = total_duration - elapsed
+                if remaining <= 0:
+                    break
+                
+                remaining_ceil = int(math.ceil(remaining))
+                if remaining_ceil != last_reported:
+                    ctx.update_status(f"Waiting: {remaining_ceil}s...")
+                    last_reported = remaining_ceil
+                
+                time.sleep(0.1)
         self.add_step(f"Wait {seconds}s", action, duration=seconds, device="System")
         return self
 

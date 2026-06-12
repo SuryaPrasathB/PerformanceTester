@@ -78,8 +78,8 @@ class WaveformCard(QFrame):
         self.setCursor(QCursor(Qt.PointingHandCursor))
         self.setFrameShape(QFrame.StyledPanel)
         self.setObjectName("WaveformCard")
-        self.setFixedWidth(180)
-        self.setFixedHeight(150)
+        self.setFixedWidth(240)
+        self.setFixedHeight(230)
         
         # Premium styling
         self.setStyleSheet("""

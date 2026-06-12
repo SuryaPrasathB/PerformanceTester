@@ -178,8 +178,7 @@ class TestPage(QWidget, Ui_TestPage):
         self.btn_stop.setEnabled(True)
         self.btn_abort.setEnabled(True)
         self.btn_stop.setText("Pause")
-        self.lbl_instruction.setStyleSheet("") # Clear any custom outcome coloring
-        self.lbl_instruction.setText("Test running...")
+        self.update_status_text("Test Status: Running...")
         self.progress_bar.setValue(0)
         self.test_runner.start()
 
@@ -191,11 +190,11 @@ class TestPage(QWidget, Ui_TestPage):
         if current_state == TestState.RUNNING:
             self.test_runner.pause()
             self.btn_stop.setText("Resume")
-            self.lbl_instruction.setText("Test Paused.")
+            self.update_status_text("Test Status: Paused")
         elif current_state == TestState.PAUSED:
             self.test_runner.resume()
             self.btn_stop.setText("Pause")
-            self.lbl_instruction.setText("Test running...")
+            self.update_status_text("Test Status: Running...")
             if self.progress_anim.state() == QPropertyAnimation.State.Paused:
                 self.progress_anim.resume()
 
@@ -204,7 +203,7 @@ class TestPage(QWidget, Ui_TestPage):
         if self.test_runner:
             self.test_runner.cancel()
             self.btn_abort.setEnabled(False)
-            self.lbl_instruction.setText("Aborting...")
+            self.update_status_text("Test Status: Aborting...")
 
     @Slot(str)
     def update_test_state(self, state_name: str):
@@ -244,8 +243,43 @@ class TestPage(QWidget, Ui_TestPage):
         
     @Slot(str)
     def update_status_text(self, text: str):
-        self.lbl_instruction.setStyleSheet("") # Clear custom outcome coloring
-        self.lbl_instruction.setText(text)
+        self.lbl_instruction.setStyleSheet("")
+        
+        is_dark = getattr(self.main_window, "current_theme", "light") == "dark"
+        sec_color = "#94A3B8" if is_dark else "#64748B"
+        title_color = "#38BDF8" if is_dark else "#2563EB"
+        
+        # Check if the test is running. If not, use simpler full text formatting
+        if not (self.test_runner and self.test_runner.isRunning()):
+            html = f"""
+            <div align='center' style='line-height: 140%;'>
+                <span style='font-size: 24px; color: {title_color}; font-weight: 600;'>{text}</span>
+            </div>
+            """
+            self.lbl_instruction.setText(html)
+            return
+            
+        # Parse status text into Title: Details
+        if ":" in text:
+            title, details = text.split(":", 1)
+            title_text = title.strip().upper()
+            details_text = details.strip()
+        else:
+            title_text = "ACTIVE OPERATION"
+            details_text = text.strip()
+            
+        # Give countdown wait operations extra prominent styling
+        if "WAIT" in title_text or "DELAY" in title_text:
+            title_color = "#F59E0B" # Amber/Orange for waiting
+            title_text = "COUNTDOWN DELAY"
+            
+        html = f"""
+        <div align='center' style='line-height: 150%;'>
+            <span style='font-size: 13px; color: {sec_color}; font-weight: bold; letter-spacing: 1.5px;'>{title_text}</span><br>
+            <span style='font-size: 30px; color: {title_color}; font-weight: 800; letter-spacing: 0.5px;'>{details_text}</span>
+        </div>
+        """
+        self.lbl_instruction.setText(html)
 
     @Slot()
     def handle_test_finished(self):
@@ -259,7 +293,16 @@ class TestPage(QWidget, Ui_TestPage):
         self.progress_bar.setValue(100)
         
         if not self.test_runner:
-            self.lbl_instruction.setText("Test Complete.")
+            is_dark = getattr(self.main_window, "current_theme", "light") == "dark"
+            sec_color = "#94A3B8" if is_dark else "#64748B"
+            html = f"""
+            <div align='center' style='line-height: 140%;'>
+                <span style='font-size: 14px; color: {sec_color}; font-weight: bold; letter-spacing: 1px;'>TEST SEQUENCE ENDED</span><br>
+                <span style='font-size: 34px; color: #10B981; font-weight: 800; letter-spacing: 0.5px;'>COMPLETE</span>
+            </div>
+            """
+            self.lbl_instruction.setText(html)
+            self.lbl_instruction.setStyleSheet("")
             return
             
         from core.test_engine.state_machine import TestState
@@ -282,14 +325,37 @@ class TestPage(QWidget, Ui_TestPage):
             result = "INCOMPLETE"
             color = "#64748B" # Slate
             
-        self.lbl_instruction.setText(f"Test Ended. Result: {result} | Meter Serial: {serial}")
-        self.lbl_instruction.setStyleSheet(f"color: {color}; font-weight: bold; font-size: 24px;")
+        is_dark = getattr(self.main_window, "current_theme", "light") == "dark"
+        sec_color = "#94A3B8" if is_dark else "#64748B"
+        text_color = "#F8FAFC" if is_dark else "#0F172A"
+        
+        html = f"""
+        <div align='center' style='line-height: 140%;'>
+            <span style='font-size: 14px; color: {sec_color}; font-weight: bold; letter-spacing: 1px;'>TEST SEQUENCE ENDED</span><br>
+            <span style='font-size: 34px; color: {color}; font-weight: 800; letter-spacing: 0.5px;'>{result}</span><br>
+            <span style='font-size: 16px; color: {text_color};'>Meter Serial: <span style='font-weight: bold;'>{serial}</span></span>
+        </div>
+        """
+        self.lbl_instruction.setText(html)
+        self.lbl_instruction.setStyleSheet("")
 
     @Slot(str, bool)
     def prompt_user_action(self, message: str, requires_input: bool):
         self.lbl_instruction.setStyleSheet("") # Clear outcome color
         self.progress_anim.stop() # Freeze animation during user input
-        self.lbl_instruction.setText(message)
+        
+        is_dark = getattr(self.main_window, "current_theme", "light") == "dark"
+        sec_color = "#EAB308" if is_dark else "#D97706" # Amber/Orange for alerts
+        title_text = "USER INPUT REQUIRED" if requires_input else "ACTION REQUIRED"
+        text_color = "#F8FAFC" if is_dark else "#0F172A"
+        
+        html_prompt = f"""
+        <div align='center' style='line-height: 140%;'>
+            <span style='font-size: 13px; color: {sec_color}; font-weight: bold; letter-spacing: 1.5px;'>{title_text}</span><br>
+            <span style='font-size: 28px; color: {text_color}; font-weight: 800;'>{message}</span>
+        </div>
+        """
+        self.lbl_instruction.setText(html_prompt)
         
         # Clear any existing dynamic buttons
         if hasattr(self, 'dynamic_buttons'):
@@ -297,13 +363,19 @@ class TestPage(QWidget, Ui_TestPage):
                 self.horizontalLayout_input.removeWidget(btn)
                 btn.deleteLater()
         self.dynamic_buttons = []
-
+ 
         if requires_input:
             if "U2 or U3" in message or "Select meter category" in message.lower():
                 self.input_instruction.hide()
                 self.btn_done.hide()
                 
-                self.lbl_instruction.setText("Select Meter Category")
+                html_cat = f"""
+                <div align='center' style='line-height: 140%;'>
+                    <span style='font-size: 13px; color: {sec_color}; font-weight: bold; letter-spacing: 1.5px;'>{title_text}</span><br>
+                    <span style='font-size: 28px; color: {text_color}; font-weight: 800;'>Select Meter Category</span>
+                </div>
+                """
+                self.lbl_instruction.setText(html_cat)
                 
                 from PySide6.QtWidgets import QPushButton
                 btn_u2 = QPushButton("U2")
