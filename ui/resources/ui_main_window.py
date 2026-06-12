@@ -215,7 +215,7 @@ class Ui_MainWindow(object):
     # setupUi
 
     def retranslateUi(self, MainWindow):
-        MainWindow.setWindowTitle(QCoreApplication.translate("MainWindow", u"Energy Meter Test System", None))
+        MainWindow.setWindowTitle(QCoreApplication.translate("MainWindow", u"Performance Tester", None))
         self.btn_sidebar_toggle.setText(QCoreApplication.translate("MainWindow", u"\u2630", None))
         self.btn_nav_test.setText("")
         self.lbl_nav_test.setText(QCoreApplication.translate("MainWindow", u"Test Dashboard", None))

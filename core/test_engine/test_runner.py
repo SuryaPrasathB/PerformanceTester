@@ -159,10 +159,20 @@ class TestRunner(QThread):
                     if not is_safe:
                         self.logger.critical("Live Monitor reported unsafe conditions! Cancelling test.")
                         self.cancel() # Break the main test thread
+                
+                # Poll MFM Telemetry and store in runtime_values
+                hw = self.context.hardware_service
+                if hw:
+                    telemetry = hw.read_mfm_telemetry()
+                    if telemetry:
+                        self.context.update_runtime_value("voltage", telemetry.get("voltage", 0.0))
+                        self.context.update_runtime_value("current", telemetry.get("current", 0.0))
+                        self.context.update_runtime_value("power_factor", telemetry.get("power_factor", 1.0))
                         
                 # 2. Update Data
                 # Copy the dict to avoid race conditions
                 current_data = dict(self.context.runtime_values)
+                current_data["state"] = self.state_machine.get_state().name
                 self.on_data_update.emit(current_data)
             except Exception:
                 pass

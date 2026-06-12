@@ -184,6 +184,56 @@ class HardwareService(QObject):
                 results[reg] = results[reg][0]
         return results
 
+    def read_mfm_telemetry(self) -> dict:
+        """
+        Reads Voltage, Current, and Power Factor from the MFM Meter.
+        """
+        if not self.mfm_drv or not self.mfm_drv.is_connected:
+            return {}
+        try:
+            from core.hardware_mapping import MFMRegister
+            if hasattr(self.mfm_drv, "read_float"):
+                v = self.mfm_drv.read_float(int(MFMRegister.VOLTAGE), function_code=4, swapped=True)
+                i = self.mfm_drv.read_float(int(MFMRegister.CURRENT), function_code=4, swapped=True)
+                pf = self.mfm_drv.read_float(int(MFMRegister.PF), function_code=4, swapped=True)
+                return {
+                    "voltage": v,
+                    "current": i,
+                    "power_factor": pf,
+                    "active_power": v * i * pf
+                }
+            else:
+                v_data = self.mfm_drv.read_data(address=int(MFMRegister.VOLTAGE), count=1)
+                i_data = self.mfm_drv.read_data(address=int(MFMRegister.CURRENT), count=1)
+                pf_data = self.mfm_drv.read_data(address=int(MFMRegister.PF), count=1)
+                v = v_data[0] if v_data else 0.0
+                i = i_data[0] if i_data else 0.0
+                pf = pf_data[0] if pf_data else 1.0
+                return {
+                    "voltage": v,
+                    "current": i,
+                    "power_factor": pf,
+                    "active_power": v * i * pf
+                }
+        except Exception as e:
+            self.logger.error(f"Error reading MFM telemetry: {e}")
+        return {}
+
+    def read_mfm_current(self) -> float:
+        """Reads instantaneous current from the MFM meter."""
+        if not self.mfm_drv or not self.mfm_drv.is_connected:
+            return 0.0
+        try:
+            from core.hardware_mapping import MFMRegister
+            if hasattr(self.mfm_drv, "read_float"):
+                return self.mfm_drv.read_float(int(MFMRegister.CURRENT), function_code=4, swapped=True)
+            else:
+                i_data = self.mfm_drv.read_data(address=int(MFMRegister.CURRENT), count=1)
+                return i_data[0] if i_data else 0.0
+        except Exception as e:
+            self.logger.error(f"Error reading MFM current: {e}")
+        return 0.0
+
     def wait_for_current_zero(self, threshold: float = 0.1, timeout_sec: int = 30, context=None) -> bool:
         """
         Monitors the meter current until it drops below the threshold or timeout occurs.

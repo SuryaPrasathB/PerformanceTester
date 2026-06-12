@@ -1,5 +1,5 @@
 from PySide6.QtWidgets import QWidget, QTableWidgetItem
-from PySide6.QtCore import Slot, Qt, QPropertyAnimation, QEasingCurve
+from PySide6.QtCore import Slot, Qt, QPropertyAnimation, QEasingCurve, QTimer
 from ui.pages.ui_test_page import Ui_TestPage
 
 class TestPage(QWidget, Ui_TestPage):
@@ -23,6 +23,12 @@ class TestPage(QWidget, Ui_TestPage):
 
         # Apply Premium Styling to Progress Bar
         self._apply_premium_styling()
+
+        # Setup telemetry timer for when the test is not running
+        self.telemetry_timer = QTimer(self)
+        self.telemetry_timer.setInterval(1000) # Poll every 1 second
+        self.telemetry_timer.timeout.connect(self._poll_telemetry)
+        self.telemetry_timer.start()
 
         # Progress Animation Engine
         self.progress_anim = QPropertyAnimation(self.progress_bar, b"value")
@@ -210,7 +216,31 @@ class TestPage(QWidget, Ui_TestPage):
         i = data.get("current", "--")
         pf = data.get("power_factor", "--")
         state = data.get("state", "RUNNING")
-        self.lbl_live_data.setText(f"STATE: {state} | V: {v}V | I: {i}A | PF: {pf}")
+        
+        v_str = f"{v:.1f}" if isinstance(v, (int, float)) else str(v)
+        i_str = f"{i:.3f}" if isinstance(i, (int, float)) else str(i)
+        pf_str = f"{pf:.2f}" if isinstance(pf, (int, float)) else str(pf)
+        
+        self.lbl_live_data.setText(f"STATE: {state} | V: {v_str}V | I: {i_str}A | PF: {pf_str}")
+
+    def _poll_telemetry(self):
+        # Only poll if test is not running
+        if self.test_runner and self.test_runner.isRunning():
+            return
+            
+        mfm_drv = self.device_manager.drivers.get("MFMMeter1")
+        if mfm_drv and mfm_drv.is_connected:
+            try:
+                from core.hardware_mapping import MFMRegister
+                if hasattr(mfm_drv, "read_float"):
+                    v = mfm_drv.read_float(int(MFMRegister.VOLTAGE), function_code=4, swapped=True)
+                    i = mfm_drv.read_float(int(MFMRegister.CURRENT), function_code=4, swapped=True)
+                    pf = mfm_drv.read_float(int(MFMRegister.PF), function_code=4, swapped=True)
+                    self.lbl_live_data.setText(f"STATE: IDLE | V: {v:.1f}V | I: {i:.3f}A | PF: {pf:.2f}")
+                    return
+            except Exception:
+                pass
+        self.lbl_live_data.setText("STATE: IDLE | V: -- V | I: -- A | PF: --")
         
     @Slot(str)
     def update_status_text(self, text: str):
