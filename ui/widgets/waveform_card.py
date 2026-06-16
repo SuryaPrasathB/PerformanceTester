@@ -17,7 +17,14 @@ class WaveformPreview(QFrame):
 
     def paintEvent(self, event):
         super().paintEvent(event)
-        if not self.data or len(self.data) < 2:
+        
+        data_a = self.data
+        data_b = None
+        if isinstance(self.data, list) and len(self.data) == 2 and isinstance(self.data[0], list):
+            data_a = self.data[0]
+            data_b = self.data[1]
+
+        if not data_a or len(data_a) < 2:
             return
             
         painter = QPainter(self)
@@ -26,32 +33,30 @@ class WaveformPreview(QFrame):
         w = self.width()
         h = self.height()
         
-        # Determine min/max values for scaling
-        max_val = max(self.data)
-        min_val = min(self.data)
-        span = max_val - min_val
-        if span == 0.0:
-            span = 1.0
+        # Determine min/max values for scaling data_a
+        max_val_a = max(data_a)
+        min_val_a = min(data_a)
+        span_a = max_val_a - min_val_a
+        if span_a == 0.0:
+            span_a = 1.0
             
         # Draw gridless zero-axis line
         painter.setPen(QPen(QColor("#F1F5F9"), 1))
-        zero_ratio = (0.0 - min_val) / span
-        zero_y = h - int(zero_ratio * h)
+        zero_ratio_a = (0.0 - min_val_a) / span_a
+        zero_y = h - int(zero_ratio_a * h)
         zero_y = max(2, min(h - 2, zero_y))
         painter.drawLine(0, zero_y, w, zero_y)
         
-        # Draw waveform path
-        painter.setPen(QPen(QColor("#2563EB"), 1.5))
-        
-        # Downsample for faster performance
-        step = max(1, len(self.data) // w)
+        # Draw data_a (Blue)
+        painter.setPen(QPen(QColor("#2563EB"), 1.2))
+        step = max(1, len(data_a) // w)
         last_pt = None
         
-        for idx in range(0, len(self.data), step):
-            px = (idx / len(self.data)) * w
-            val = self.data[idx]
+        for idx in range(0, len(data_a), step):
+            px = (idx / len(data_a)) * w
+            val = data_a[idx]
             
-            ratio = (val - min_val) / span
+            ratio = (val - min_val_a) / span_a
             py = h - (ratio * h)
             # Clip padding
             py = max(4, min(h - 4, py))
@@ -61,6 +66,30 @@ class WaveformPreview(QFrame):
                 painter.drawLine(last_pt, curr_pt)
             last_pt = curr_pt
 
+        # Draw data_b (Red) if present
+        if data_b and len(data_b) >= 2:
+            max_val_b = max(data_b)
+            min_val_b = min(data_b)
+            span_b = max_val_b - min_val_b
+            if span_b == 0.0:
+                span_b = 1.0
+                
+            painter.setPen(QPen(QColor("#EF4444"), 1.2))
+            last_pt = None
+            
+            for idx in range(0, len(data_b), step):
+                px = (idx / len(data_b)) * w
+                val = data_b[idx]
+                
+                ratio = (val - min_val_b) / span_b
+                py = h - (ratio * h)
+                py = max(4, min(h - 4, py))
+                
+                curr_pt = QPoint(int(px), int(py))
+                if last_pt is not None:
+                    painter.drawLine(last_pt, curr_pt)
+                last_pt = curr_pt
+
 
 class WaveformCard(QFrame):
     """
@@ -68,12 +97,33 @@ class WaveformCard(QFrame):
     trigger that opens the detailed analysis view in a QDialog.
     """
     
-    def __init__(self, name, data, timebase, range_val, parent=None):
+    def __init__(self, name, data, timebase, range_val, parent=None, test_id="unknown"):
         super().__init__(parent)
         self.name = name
         self.data = data
         self.timebase = timebase
         self.range_val = range_val
+        self.test_id = test_id.lower() if test_id else "unknown"
+        
+        # Calculate PF if dual channels are present and it's not G5 test
+        self.calculated_pf = None
+        self.pulse_duration = None
+        
+        data_a = self.data
+        data_b = None
+        if isinstance(self.data, list) and len(self.data) == 2 and isinstance(self.data[0], list):
+            data_a = self.data[0]
+            data_b = self.data[1]
+            
+        if data_b and self.test_id != "g5":
+            try:
+                from core.waveform_analyzer import calculate_pulse_duration, calculate_pf_from_duration
+                duration_ms = calculate_pulse_duration(data_b, timebase)
+                if duration_ms > 0.0:
+                    self.pulse_duration = duration_ms
+                    self.calculated_pf = calculate_pf_from_duration(duration_ms)
+            except Exception:
+                pass
         
         self.setCursor(QCursor(Qt.PointingHandCursor))
         self.setFrameShape(QFrame.StyledPanel)
@@ -105,9 +155,18 @@ class WaveformCard(QFrame):
         layout.setContentsMargins(10, 8, 10, 10)
         layout.setSpacing(6)
         
+        # Title bar layout
+        title_layout = QHBoxLayout()
         self.lbl_title = QLabel(name)
         self.lbl_title.setStyleSheet("font-weight: bold; color: #1E293B; font-size: 12px;")
-        layout.addWidget(self.lbl_title)
+        title_layout.addWidget(self.lbl_title)
+        
+        if self.calculated_pf is not None:
+            self.lbl_pf = QLabel(f"PF: {self.calculated_pf:.2f}")
+            self.lbl_pf.setStyleSheet("font-weight: bold; color: #10B981; font-size: 11px;")
+            title_layout.addWidget(self.lbl_pf)
+            
+        layout.addLayout(title_layout)
         
         self.preview = WaveformPreview(data, self)
         layout.addWidget(self.preview)
@@ -130,7 +189,7 @@ class WaveformCard(QFrame):
         
         # Interactive Graph widget
         graph = WaveformGraph(dialog)
-        graph.setData(self.data, None, self.timebase, self.range_val)
+        graph.setData(self.data, None, self.timebase, self.range_val, test_id=self.test_id)
         # Enable Auto-zoom by default for transient capture views
         graph.setAutoZoomEnabled(True)
         main_layout.addWidget(graph)

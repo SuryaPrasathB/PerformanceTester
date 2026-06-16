@@ -100,8 +100,8 @@ class PicoScopeDriver(BaseDriver):
                 
                 # Channel A enabled, DC coupling, 20V Range (constant 10)
                 ps2000.ps2000_set_channel(self.handle, 0, 1, 1, 10)
-                # Channel B disabled
-                ps2000.ps2000_set_channel(self.handle, 1, 0, 1, 10)
+                # Channel B enabled, DC coupling, 5V Range (constant 8)
+                ps2000.ps2000_set_channel(self.handle, 1, 1, 1, 8)
                 return True
             else:
                 self.logger.error("PicoScope: Failed to open device unit. Falling back to Mock Mode.")
@@ -227,16 +227,21 @@ class PicoScopeDriver(BaseDriver):
                 if num_read > 0:
                     self.logger.info(f"PicoScope: Read {num_read} values from hardware buffer.")
                     
-                    # Convert raw ADC values to voltage/current (RANGE_20V -> 20.0 V full scale)
-                    range_volts = 20.0
+                    # Convert raw ADC values to voltage/current
+                    # Channel A: ±20V -> index 10 -> range_volts = 20.0
+                    # Channel B: ±5V -> index 8 -> range_volts = 5.0
+                    range_volts_a = 20.0
+                    range_volts_b = 5.0
                     max_adc = 32512.0
                     
-                    scaled_data = []
+                    scaled_a = []
+                    scaled_b = []
                     for i in range(num_read):
-                        # Calculate raw voltage
-                        volt = (buffer_a[i] / max_adc) * range_volts
-                        scaled_data.append(volt)
-                    return scaled_data
+                        volt_a = (buffer_a[i] / max_adc) * range_volts_a
+                        volt_b = (buffer_b[i] / max_adc) * range_volts_b
+                        scaled_a.append(volt_a)
+                        scaled_b.append(volt_b)
+                    return [scaled_a, scaled_b]
                 else:
                     self.logger.warning("PicoScope: Hardware buffer returned 0 values.")
                     return []
@@ -246,43 +251,50 @@ class PicoScopeDriver(BaseDriver):
         return []
 
     def _generate_mock_surge(self) -> list:
-        """Generates a realistic 50Hz decaying short circuit current surge transient."""
+        """Generates a realistic 50Hz mains voltage and decaying short circuit current surge transient."""
         self.logger.debug("[MOCK] Generating transient current surge waveform.")
-        data = []
+        voltage_data = []
+        current_data = []
         f = 50.0  # 50 Hz
-        peak = 4500.0  # Peak Current in Amperes
+        peak_current = 4500.0  # Peak Current in Amperes
+        peak_voltage = 12.0 # Peak Voltage in Volts
         
         # 2500 samples at 81.92 us interval -> ~204.8 ms total duration
         interval_s = 0.00008192
         
-        # Short circuit timing: starts at ~25ms, ends at ~45ms (20ms duration)
+        # Short circuit timing: starts at ~25ms, ends at ~36.5ms (11.5ms duration)
         sc_start = 0.025
-        sc_end = 0.045
+        pulse_duration = 0.0115
+        sc_end = sc_start + pulse_duration
         
         for i in range(self.no_of_values):
             t = i * interval_s
             
-            # AC sine wave component
-            ac = peak * math.sin(2 * math.pi * f * t)
+            # Channel A: Voltage (continuous sine wave)
+            val_v = peak_voltage * math.sin(2 * math.pi * f * t)
+            voltage_data.append(val_v)
+            
+            # AC sine wave component for current
+            ac = peak_current * math.sin(2 * math.pi * f * t)
             
             # Decaying DC offset (asymmetrical short circuit transient)
-            dc = peak * 0.7 * math.exp(-t / 0.012)
+            dc = peak_current * 0.7 * math.exp(-t / 0.012)
             
-            val = ac + dc
+            val_i = ac + dc
             
-            # Simulate contact opening and closing (20ms short-circuit duration)
+            # Simulate contact opening and closing
             if sc_start <= t <= sc_end:
                 # Smooth transients at boundaries
-                fade_in = min(1.0, (t - sc_start) / 0.0015)
-                fade_out = min(1.0, (sc_end - t) / 0.0015)
-                current = val * fade_in * fade_out
+                fade_in = min(1.0, (t - sc_start) / 0.001)
+                fade_out = min(1.0, (sc_end - t) / 0.001)
+                current = val_i * fade_in * fade_out
             else:
                 # Add background noise (leakage current)
                 current = random.uniform(-3.0, 3.0)
                 
-            data.append(current)
+            current_data.append(current)
             
-        return data
+        return [voltage_data, current_data]
 
     def read_data(self, address=0, count=1):
         return self.get_waveform()

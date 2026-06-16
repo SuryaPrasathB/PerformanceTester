@@ -144,7 +144,34 @@ class HardwareService(QObject):
                 timebase = self.picoscope_drv.timebase
                 # RANGE_20V (index 10)
                 voltage_range = 10 
-                self.logger.info(f"Hardware Service: Emitting captured waveform '{name}' with {len(data)} points.")
+                
+                # Check for dual channels and calculate PF if not G5 Fault Current Making Capacity
+                test_id = "unknown"
+                if hasattr(self, 'context') and self.context:
+                    test_id = getattr(self.context, "test_identifier", "unknown").lower()
+                
+                # Retrieve the number of points for logging
+                num_points = len(data[0]) if (isinstance(data, list) and len(data) == 2 and isinstance(data[0], list)) else len(data)
+                self.logger.info(f"Hardware Service: Emitting captured waveform '{name}' with {num_points} points. Test ID: {test_id}")
+                
+                if isinstance(data, list) and len(data) == 2 and isinstance(data[0], list):
+                    if test_id != "g5":
+                        try:
+                            from core.waveform_analyzer import calculate_pulse_duration, calculate_pf_from_duration
+                            duration_ms = calculate_pulse_duration(data[1], timebase)
+                            if duration_ms > 0.0:
+                                pf = calculate_pf_from_duration(duration_ms)
+                                self.logger.info(f"Hardware Service: Calculated Power Factor from current waveform: {pf:.3f} (Duration: {duration_ms:.2f} ms)")
+                                if hasattr(self, 'context') and self.context:
+                                    self.context.update_runtime_value("power_factor", pf)
+                                    if not isinstance(self.context.test_results, dict):
+                                        self.context.test_results = {}
+                                    self.context.test_results["calculated_pf"] = pf
+                            else:
+                                self.logger.info("Hardware Service: No current pulse detected, defaulting PF calculation to UPF.")
+                        except Exception as e:
+                            self.logger.error(f"Hardware Service: Error calculating Power Factor from waveform: {e}")
+                            
                 self.waveform_captured.emit(name, data, timebase, voltage_range)
             else:
                 self.logger.warning("Hardware Service: PicoScope returned empty waveform data.")

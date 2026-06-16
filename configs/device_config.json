@@ -12,7 +12,7 @@
       "type": "dlms",
       "port": "COM2",
       "baudrate": 9600,
-      "mock": true
+      "mock": false
     },
     {
       "name": "MFMMeter1",
@@ -20,7 +20,7 @@
       "port": "COM1",
       "baudrate": 9600,
       "slave_id": 1,
-      "mock": true
+      "mock": false
     },
     {
       "name": "MFMMeter2",
@@ -28,7 +28,7 @@
       "port": "COM1",
       "baudrate": 9600,
       "slave_id": 2,
-      "mock": true
+      "mock": false
     }
   ],
   "plc": {

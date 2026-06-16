@@ -541,8 +541,13 @@ class TestPage(QWidget, Ui_TestPage):
             
         self.frame_graphs_container.show()
             
+        # Determine current test identifier
+        test_id = "unknown"
+        if self.test_runner:
+            test_id = getattr(self.test_runner.test, "test_identifier", "unknown").lower()
+            
         from ui.widgets.waveform_card import WaveformCard
-        card = WaveformCard(name, data, timebase, range_val, self.frame_graphs_container)
+        card = WaveformCard(name, data, timebase, range_val, self.frame_graphs_container, test_id=test_id)
         self.horizontalLayout_graphs.addWidget(card)
         self.dynamic_cards.append(card)
 

@@ -25,6 +25,10 @@ class WaveformGraph(QWidget):
         self.interval_ms = 0.320
         self.range_volts = 20.0
         
+        self.test_id = "unknown"
+        self.calculated_pf = None
+        self.pulse_duration = None
+        
         self.current_tool = ToolMode.RULER
         self.show_zoom_toolbox = False
         
@@ -62,12 +66,31 @@ class WaveformGraph(QWidget):
         
         self.setMouseTracking(True)
 
-    def setData(self, data_a, data_b=None, timebase=15, range_val=10):
+    def setData(self, data_a, data_b=None, timebase=15, range_val=10, test_id="unknown"):
         """Updates the graph dataset and resets the viewport."""
+        # Unpack if data_a is a dual-channel list for backward compatibility
+        if isinstance(data_a, list) and len(data_a) == 2 and isinstance(data_a[0], list):
+            data_b = data_a[1]
+            data_a = data_a[0]
+            
         self.data_a = data_a
         self.data_b = data_b
         self.timebase = timebase
         self.range = range_val
+        self.test_id = test_id.lower() if test_id else "unknown"
+        self.calculated_pf = None
+        self.pulse_duration = None
+        
+        # Calculate PF if we have Channel B (current) and it's not G5 test
+        if self.data_b and self.test_id != "g5":
+            try:
+                from core.waveform_analyzer import calculate_pulse_duration, calculate_pf_from_duration
+                duration_ms = calculate_pulse_duration(self.data_b, timebase)
+                if duration_ms > 0.0:
+                    self.pulse_duration = duration_ms
+                    self.calculated_pf = calculate_pf_from_duration(duration_ms)
+            except Exception:
+                pass
         
         # Map PicoScope Range constants to actual Volt ranges
         # Mappings: 0->10mV, 1->20mV, 2->50mV, 3->100mV, 4->200mV, 5->500mV, 6->1V, 7->2V, 8->5V, 9->10V, 10->20V
@@ -291,7 +314,7 @@ class WaveformGraph(QWidget):
             self.draw_waveform_path(painter, self.data_a, QColor("#1D4ED8"), graph_w, graph_h)
             
         if self.data_b and len(self.data_b) > 1:
-            self.draw_waveform_path(painter, self.data_b, QColor("#059669"), graph_w, graph_h)
+            self.draw_waveform_path(painter, self.data_b, QColor("#EF4444"), graph_w, graph_h)
             
         # 5. Draw Zoom Selection Rectangle
         if self.dragging_cursor == 10:
@@ -367,6 +390,10 @@ class WaveformGraph(QWidget):
         # 10. Draw Zoom toolbox (if toggle active)
         if self.show_zoom_toolbox:
             self.draw_zoom_toolbox(painter, w, h)
+            
+        # 11. Draw floating Power Factor Badge
+        if self.calculated_pf is not None:
+            self.draw_pf_badge(painter)
 
     def draw_waveform_path(self, painter, dataset, color, graph_w, graph_h):
         """Paints a waveform series on the screen canvas."""
@@ -417,6 +444,38 @@ class WaveformGraph(QWidget):
         painter.setPen(QPen(QColor("#334155"), 1))
         painter.drawLine(x + 7, y + 9, x + 11, y + 9)
         painter.drawLine(x + 9, y + 7, x + 9, y + 11)
+
+    def draw_pf_badge(self, painter):
+        """Draws a premium styled floating badge/overlay displaying the calculated Power Factor."""
+        badge_x = self.pad_left + 15
+        badge_y = self.pad_top + 15
+        badge_w = 175
+        badge_h = 52
+        
+        painter.save()
+        # Draw translucent dark background card with subtle blue border
+        painter.setPen(QPen(QColor("#3B82F6"), 1))
+        painter.setBrush(QBrush(QColor(15, 23, 42, 220))) # 85% opacity Slate 900
+        painter.drawRoundedRect(badge_x, badge_y, badge_w, badge_h, 6, 6)
+        
+        # Draw label
+        painter.setFont(QFont("Segoe UI", 8, QFont.Bold))
+        painter.setPen(QPen(QColor("#94A3B8")))
+        painter.drawText(QRect(badge_x + 10, badge_y + 6, badge_w - 20, 16), Qt.AlignLeft | Qt.AlignVCenter, "CALCULATED PF")
+        
+        # Draw PF value
+        painter.setFont(QFont("Segoe UI", 15, QFont.Bold))
+        painter.setPen(QPen(QColor("#38BDF8")))
+        pf_text = f"{self.calculated_pf:.3f}"
+        painter.drawText(QRect(badge_x + 10, badge_y + 22, badge_w - 20, 24), Qt.AlignLeft | Qt.AlignVCenter, pf_text)
+        
+        # Draw Pulse Duration text
+        painter.setFont(QFont("Segoe UI", 8, QFont.Bold))
+        painter.setPen(QPen(QColor("#10B981"))) # Emerald Green
+        dur_text = f"({self.pulse_duration:.2f} ms)"
+        painter.drawText(QRect(badge_x + 80, badge_y + 26, badge_w - 90, 20), Qt.AlignRight | Qt.AlignVCenter, dur_text)
+        
+        painter.restore()
 
     def draw_rulers_overlay(self, painter, graph_w, graph_h, w):
         """Renders the numerical measurements table based on cursors."""

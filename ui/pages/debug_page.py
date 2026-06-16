@@ -587,12 +587,13 @@ class DebugPage(QWidget, Ui_DebugPage):
             pico_driver.stop_capture()
             data = pico_driver.get_waveform()
             if data:
-                self.txt_picoscope_console.append(f"<< Success: Captured {len(data)} points.")
+                num_points = len(data[0]) if (isinstance(data, list) and len(data) == 2 and isinstance(data[0], list)) else len(data)
+                self.txt_picoscope_console.append(f"<< Success: Captured {num_points} points.")
                 from ui.widgets.waveform_card import WaveformCard
                 timebase = pico_driver.timebase
                 voltage_range = 10
                 
-                card = WaveformCard("Debug Capture", data, timebase, voltage_range, self)
+                card = WaveformCard("Debug Capture", data, timebase, voltage_range, self, test_id="debug")
                 card.open_analysis_dialog()
             else:
                 self.txt_picoscope_console.append("<< Failed: Empty waveform data returned.")
