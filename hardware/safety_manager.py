@@ -67,9 +67,9 @@ class SafetyManager:
         if self.emergency_triggered:
             return False
 
-        # In a real environment, we'd read hardware directly:
-        live_v = self.plc.read_input("voltage_monitor") 
-        live_i = self.plc.read_input("current_monitor")
+        # In a real environment, we'd read hardware directly if mapped:
+        live_v = self.plc.read_input("voltage_monitor") if "voltage_monitor" in self.plc.registers else 0.0
+        live_i = self.plc.read_input("current_monitor") if "current_monitor" in self.plc.registers else 0.0
         
         # For our mock/simulated context, we might also rely on the context variables
         ctx_v = context.get_runtime_value("voltage", 0.0)

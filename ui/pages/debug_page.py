@@ -249,13 +249,15 @@ class DebugPage(QWidget, Ui_DebugPage):
         grid_layout.setSpacing(12)
         
         coils = [
+            (PLCCoil.SCR_COIL_ADDR, "SCR COIL"),
+            (PLCCoil.ACB_COIL_ADDR, "ACB COIL"),
+            (PLCCoil.CONTACTOR_100mA_LOAD_BANK_COIL_ADDR, "100mA CONTACTOR"),
+            (PLCCoil.CONTACTOR_120A_LOAD_BANK_COIL_ADDR, "120A CONTACTOR"),
             (PLCCoil.FCMC_TEST_START, "FCMC START"),
             (PLCCoil.SCCC_TEST_START, "SCCC START"),
             (PLCCoil.FCMCT_ACK, "FCMCT ACK"),
-            (PLCCoil.ACB_COIL_ADDR, "ACB COIL"),
-            (PLCCoil.SCR_COIL_ADDR, "SCR COIL"),
             (PLCCoil.PRE_FUSING_MODE_COIL_ADDR, "PRE FUSING"),
-            (PLCCoil.PROS_CT_TEST_START, "PROS CT START"),
+            (PLCCoil.FAULT_INDICATION_BUZZER_COIL_ADDR, "BUZZER COIL"),
         ]
         
         self.coil_buttons = {}

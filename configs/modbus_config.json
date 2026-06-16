@@ -1,12 +1,14 @@
 {
   "plc_coils": {
-    "FCMC_TEST_START": 0,
-    "SCCC_TEST_START": 1,
-    "FCMCT_ACK": 2,
-    "ACB_COIL_ADDR": 3,
-    "SCR_COIL_ADDR": 4,
-    "PRE_FUSING_MODE_COIL_ADDR": 5,
-    "PROS_CT_TEST_START": 6
+    "SCR_COIL_ADDR": 1,
+    "ACB_COIL_ADDR": 2,
+    "CONTACTOR_100mA_LOAD_BANK_COIL_ADDR": 3,
+    "CONTACTOR_120A_LOAD_BANK_COIL_ADDR": 4,
+    "FCMC_TEST_START": 5,
+    "SCCC_TEST_START": 6,
+    "FCMCT_ACK": 7,
+    "PRE_FUSING_MODE_COIL_ADDR": 8,
+    "FAULT_INDICATION_BUZZER_COIL_ADDR": 9
   },
   "mfm_meter": {
     "connection": {

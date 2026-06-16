@@ -31,18 +31,7 @@
       "mock": false
     }
   ],
-  "plc": {
-    "ip": "192.168.0.118",
-    "coils": {
-      "relay_main": 0,
-      "fault_trigger": 1,
-      "load_on": 2
-    },
-    "registers": {
-      "voltage_monitor": 10,
-      "current_monitor": 11
-    }
-  },
+  "plc": {},
   "safety": {
     "max_voltage_v": 250.0,
     "max_current_a": 10.0,

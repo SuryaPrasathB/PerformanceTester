@@ -15,8 +15,8 @@ class ManualProspectiveCurrentTest(BaseTest):
         # 2. Close Load Switch
         builder.send_meter_command("close_load_switch")
         
-        # 3. Notify PLC that the test is starting (PROS_CT_TEST_START = 0x06)
-        builder.set_plc_coil(PLCCoil.PROS_CT_TEST_START, True)
+        # 3. Notify PLC that the test is starting (using SCCC_TEST_START = 0x06)
+        builder.set_plc_coil(PLCCoil.SCCC_TEST_START, True)
         
         # 4. Start capturing PicoScope waveform.
         builder.custom_action("Start PicoScope Capture", lambda ctx, hw: getattr(hw, "start_waveform_capture", lambda: ctx.logger.info("Started Waveform Capture"))())

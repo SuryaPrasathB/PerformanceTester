@@ -62,7 +62,6 @@ class PLCController:
         if data and len(data) > 0:
             return data[0]
         return 0
-
     def emergency_stop(self) -> bool:
         """
         Hard stops all critical outputs immediately. 
@@ -70,8 +69,19 @@ class PLCController:
         """
         self.logger.critical("PLC EMERGENCY STOP INITIATED.")
         results = []
+        
+        # Turn off legacy outputs if they exist in config
         for channel_name in ["relay_main", "load_on", "fault_trigger"]:
             if channel_name in self.coils:
                 results.append(self.set_output(channel_name, False))
         
+        # Also turn off all coils from PLCCoil mapping (loaded from modbus_config.json)
+        try:
+            from core.hardware_mapping import PLCCoil
+            for coil in PLCCoil:
+                self.logger.info(f"PLC Emergency: Writing False to {coil.name} (coil {coil.value})")
+                results.append(self.write_coil(coil.value, False))
+        except Exception as e:
+            self.logger.error(f"Error turning off modbus mappings during emergency stop: {e}")
+            
         return all(results)

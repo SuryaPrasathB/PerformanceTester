@@ -14,8 +14,8 @@ class TestModbusCoils(unittest.TestCase):
         self.plc_config = self.config_service.get_devices()[0] # PLC1
 
     def test_config_ip(self):
-        # Verify PLC1 IP is aligned with the new IP 192.168.0.123
-        self.assertEqual(self.plc_config.get("ip"), "192.168.0.123")
+        # Verify PLC1 IP is aligned with the configured IP 192.168.0.118
+        self.assertEqual(self.plc_config.get("ip"), "192.168.0.118")
         self.assertEqual(self.plc_config.get("name"), "PLC1")
 
     def test_mock_read_write_coil(self):

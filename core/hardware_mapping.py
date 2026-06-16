@@ -8,13 +8,15 @@ MODBUS_CONFIG_PATH = os.path.join(CONFIG_DIR, "configs", "modbus_config.json")
 
 # Default values to fallback on if loading fails or file doesn't exist
 DEFAULT_COILS = {
-    "FCMC_TEST_START": 0x00,
-    "SCCC_TEST_START": 0x01,
-    "FCMCT_ACK": 0x02,
-    "ACB_COIL_ADDR": 0x03,
-    "SCR_COIL_ADDR": 0x04,
-    "PRE_FUSING_MODE_COIL_ADDR": 0x05,
-    "PROS_CT_TEST_START": 0x06
+    "SCR_COIL_ADDR": 0x01,
+    "ACB_COIL_ADDR": 0x02,
+    "CONTACTOR_100mA_LOAD_BANK_COIL_ADDR": 0x03,
+    "CONTACTOR_120A_LOAD_BANK_COIL_ADDR": 0x04,
+    "FCMC_TEST_START": 0x05,
+    "SCCC_TEST_START": 0x06,
+    "FCMCT_ACK": 0x07,
+    "PRE_FUSING_MODE_COIL_ADDR": 0x08,
+    "FAULT_INDICATION_BUZZER_COIL_ADDR": 0x09
 }
 
 DEFAULT_REGISTERS = {
