@@ -59,7 +59,7 @@ class DebugPollWorker(QThread):
                 meter_driver = self.device_manager.drivers.get("EnergyMeter1")
                 meter_connected = meter_driver and meter_driver.is_connected
                 data["meter_connected"] = meter_connected
-                if meter_connected:
+                if meter_connected and meter_driver.__class__.__name__ == "DlmsDriver":
                     data["meter_readings"] = meter_driver.read_data()
 
                 # 4. Poll MFM Meter 1
@@ -362,69 +362,127 @@ class DebugPage(QWidget, Ui_DebugPage):
         card, layout, header, self.lbl_meter_led, self.lbl_meter_status, self.btn_meter_connect = self.create_card_frame("2. ENERGY METER")
         self.btn_meter_connect.clicked.connect(lambda: self.toggle_device_connection("EnergyMeter1"))
         
-        # Parameter Display
-        self.meter_readings_box = QGroupBox("Live Parameter Values")
-        readings_layout = QGridLayout(self.meter_readings_box)
-        readings_layout.setSpacing(15)
+        # Grid/buttons container box
+        self.meter_controls_box = QGroupBox("Meter Controls")
+        controls_layout = QVBoxLayout(self.meter_controls_box)
+        controls_layout.setSpacing(12)
         
-        lbl_v = QLabel("Voltage L1:")
-        self.lbl_meter_val_v = QLabel("--- V")
-        self.lbl_meter_val_v.setStyleSheet("font-weight: bold; color: #38BDF8; font-size: 16px;")
+        # Profile selector combobox
+        profile_layout = QHBoxLayout()
+        profile_layout.setSpacing(10)
+        lbl_profile = QLabel("Select Profile:")
+        lbl_profile.setStyleSheet("font-weight: bold; color: #475569; font-size: 13px;")
         
-        lbl_i = QLabel("Current L1:")
-        self.lbl_meter_val_i = QLabel("--- A")
-        self.lbl_meter_val_i.setStyleSheet("font-weight: bold; color: #38BDF8; font-size: 16px;")
+        self.cmb_meter_profile_debug = QComboBox()
+        self.cmb_meter_profile_debug.setFixedWidth(250)
+        self.cmb_meter_profile_debug.setStyleSheet("""
+            QComboBox {
+                padding: 8px;
+                border: 1px solid #CBD5E1;
+                border-radius: 6px;
+                background-color: #FFFFFF;
+                color: #1E293B;
+                font-size: 13px;
+                min-width: 200px;
+            }
+            QComboBox QAbstractItemView {
+                background-color: #FFFFFF;
+                border: 1px solid #CBD5E1;
+                selection-background-color: #EEF2FF;
+                selection-color: #4338CA;
+                color: #1E293B;
+            }
+            QComboBox::drop-down { border-left: 1px solid #CBD5E1; }
+        """)
         
-        lbl_pf = QLabel("Power Factor:")
-        self.lbl_meter_val_pf = QLabel("---")
-        self.lbl_meter_val_pf.setStyleSheet("font-weight: bold; color: #38BDF8; font-size: 16px;")
+        # Populate profiles
+        from services.profile_manager import ProfileManager
+        pm = ProfileManager()
+        profiles = pm.get_all_profiles()
+        for p in profiles:
+            self.cmb_meter_profile_debug.addItem(f"{p.get('name')} ({p.get('communication_mode')})", p)
+            
+        self.cmb_meter_profile_debug.currentIndexChanged.connect(self._on_meter_profile_changed_debug)
         
-        lbl_w = QLabel("Active Power:")
-        self.lbl_meter_val_w = QLabel("--- W")
-        self.lbl_meter_val_w.setStyleSheet("font-weight: bold; color: #38BDF8; font-size: 16px;")
+        profile_layout.addWidget(lbl_profile)
+        profile_layout.addWidget(self.cmb_meter_profile_debug)
+        profile_layout.addStretch()
+        controls_layout.addLayout(profile_layout)
         
-        readings_layout.addWidget(lbl_v, 0, 0)
-        readings_layout.addWidget(self.lbl_meter_val_v, 0, 1)
-        readings_layout.addWidget(lbl_i, 0, 2)
-        readings_layout.addWidget(self.lbl_meter_val_i, 0, 3)
-        readings_layout.addWidget(lbl_pf, 1, 0)
-        readings_layout.addWidget(self.lbl_meter_val_pf, 1, 1)
-        readings_layout.addWidget(lbl_w, 1, 2)
-        readings_layout.addWidget(self.lbl_meter_val_w, 1, 3)
+        # Horizontal layout for the buttons
+        buttons_layout = QHBoxLayout()
+        buttons_layout.setSpacing(15)
         
-        layout.addWidget(self.meter_readings_box)
+        self.btn_load_switch_on = QPushButton("LOAD SWITCH ON")
+        self.btn_load_switch_on.clicked.connect(lambda: self.send_meter_command_debug("close_load_switch"))
         
-        # DLMS Query Tool
-        self.dlms_box = QGroupBox("DLMS OBIS Command Utility")
-        dlms_layout = QVBoxLayout(self.dlms_box)
+        self.btn_load_switch_off = QPushButton("LOAD SWITCH OFF")
+        self.btn_load_switch_off.clicked.connect(lambda: self.send_meter_command_debug("open_load_switch"))
         
-        input_layout = QHBoxLayout()
-        self.le_meter_obis = QLineEdit()
-        self.le_meter_obis.setPlaceholderText("OBIS Code (e.g. 0.0.96.1.0.255)")
+        self.btn_read_serial = QPushButton("Read Serial Number")
+        self.btn_read_serial.clicked.connect(lambda: self.send_meter_command_debug("read_serial_number"))
         
-        self.le_meter_obis_val = QLineEdit()
-        self.le_meter_obis_val.setPlaceholderText("Write Value (optional)")
+        # Set styles for the buttons
+        self.btn_load_switch_on.setStyleSheet("""
+            QPushButton {
+                background-color: #10B981;
+                color: #FFFFFF;
+                font-weight: bold;
+                border: none;
+                border-radius: 6px;
+                padding: 10px 16px;
+                font-size: 13px;
+            }
+            QPushButton:hover { background-color: #059669; }
+        """)
+        self.btn_load_switch_off.setStyleSheet("""
+            QPushButton {
+                background-color: #EF4444;
+                color: #FFFFFF;
+                font-weight: bold;
+                border: none;
+                border-radius: 6px;
+                padding: 10px 16px;
+                font-size: 13px;
+            }
+            QPushButton:hover { background-color: #DC2626; }
+        """)
+        self.btn_read_serial.setStyleSheet("""
+            QPushButton {
+                background-color: #3B82F6;
+                color: #FFFFFF;
+                font-weight: bold;
+                border: none;
+                border-radius: 6px;
+                padding: 10px 16px;
+                font-size: 13px;
+            }
+            QPushButton:hover { background-color: #2563EB; }
+        """)
         
-        btn_obis_read = QPushButton("Read OBIS")
-        btn_obis_read.clicked.connect(self.read_energy_obis)
+        buttons_layout.addWidget(self.btn_load_switch_on)
+        buttons_layout.addWidget(self.btn_load_switch_off)
+        buttons_layout.addWidget(self.btn_read_serial)
+        buttons_layout.addStretch()
         
-        btn_obis_write = QPushButton("Write OBIS")
-        btn_obis_write.clicked.connect(self.write_energy_obis)
+        controls_layout.addLayout(buttons_layout)
         
-        self.style_action_buttons(btn_obis_read, btn_obis_write)
-        
-        input_layout.addWidget(self.le_meter_obis)
-        input_layout.addWidget(self.le_meter_obis_val)
-        input_layout.addWidget(btn_obis_read)
-        input_layout.addWidget(btn_obis_write)
-        dlms_layout.addLayout(input_layout)
+        # Result console
+        lbl_console = QLabel("Result Output:")
+        lbl_console.setStyleSheet("font-weight: bold; color: #94A3B8; font-size: 12px;")
+        controls_layout.addWidget(lbl_console)
         
         self.txt_meter_console = QTextEdit()
         self.txt_meter_console.setReadOnly(True)
-        self.txt_meter_console.setMaximumHeight(100)
+        self.txt_meter_console.setMaximumHeight(150)
         
-        dlms_layout.addWidget(self.txt_meter_console)
-        layout.addWidget(self.dlms_box)
+        # Initial driver type configuration
+        if self.cmb_meter_profile_debug.count() > 0:
+            self._on_meter_profile_changed_debug(self.cmb_meter_profile_debug.currentIndex())
+        
+        controls_layout.addWidget(self.txt_meter_console)
+        
+        layout.addWidget(self.meter_controls_box)
         self.scroll_layout.addWidget(card)
 
     def create_mfm1_card(self):
@@ -919,41 +977,107 @@ class DebugPage(QWidget, Ui_DebugPage):
         except Exception as e:
             self.lbl_plc_gen_result.setText(f"Error: {e}")
 
-    def read_energy_obis(self):
-        meter_driver = self.device_manager.drivers.get("EnergyMeter1")
-        if not meter_driver or not meter_driver.is_connected:
-            self.txt_meter_console.append("Meter is disconnected.")
-            return
-        try:
-            obis = self.le_meter_obis.text().strip()
-            if not obis: return
-            self.txt_meter_console.append(f">> Read OBIS: {obis}")
-            res = meter_driver.read_data(obis_code=obis)
-            self.txt_meter_console.append(f"<< Value: {res}")
-        except Exception as e:
-            self.txt_meter_console.append(f"<< Error: {e}")
+    def _on_meter_profile_changed_debug(self, index):
+        profile = self.cmb_meter_profile_debug.currentData()
+        if profile:
+            mode = profile.get("communication_mode", "DLMS").lower()
+            self.device_manager.switch_device_type("EnergyMeter1", mode)
+            if hasattr(self, 'txt_meter_console'):
+                self.txt_meter_console.append(f">> Switched Energy Meter type to: {mode.upper()}")
 
-    def write_energy_obis(self):
-        meter_driver = self.device_manager.drivers.get("EnergyMeter1")
-        if not meter_driver or not meter_driver.is_connected:
-            self.txt_meter_console.append("Meter is disconnected.")
+    def send_meter_command_debug(self, command_key: str):
+        profile = self.cmb_meter_profile_debug.currentData()
+        if not profile:
+            self.txt_meter_console.append("Error: No meter profile selected.")
             return
-        try:
-            obis = self.le_meter_obis.text().strip()
-            val_str = self.le_meter_obis_val.text().strip()
-            if not obis or not val_str: return
-            self.txt_meter_console.append(f">> Write OBIS: {obis} = {val_str}")
+
+        # Send unlock before switch operation if unlock is configured and has a value
+        if command_key in ["close_load_switch", "open_load_switch"]:
+            unlock_cmd = profile.get("commands", {}).get("unlock")
+            if unlock_cmd and unlock_cmd.get("value"):
+                self.txt_meter_console.append(">> Auto-sending unlock command first...")
+                self._execute_single_command_debug(profile, "unlock")
+                time.sleep(0.2)
+        
+        self._execute_single_command_debug(profile, command_key)
+
+    def _execute_single_command_debug(self, profile: dict, key: str):
+        cmd_data = profile.get("commands", {}).get(key)
+        if not cmd_data:
+            self.txt_meter_console.append(f"Error: Command '{key}' not mapped in profile '{profile.get('name')}'.")
+            return
             
-            try:
-                val = int(val_str)
-            except ValueError:
-                try:
-                    val = float(val_str)
-                except ValueError:
-                    val = val_str
+        val = cmd_data.get("value", "")
+        if not val:
+            self.txt_meter_console.append(f"Error: Value for command '{key}' is empty.")
+            return
+
+        fmt = cmd_data.get("format", "Hex").lower()
+        mode = profile.get("communication_mode", "DLMS").lower()
+        
+        self.txt_meter_console.append(f">> Sending Command '{key}' via {profile.get('communication_mode')}: {val} [{cmd_data.get('format')}]")
+        
+        drv = self.device_manager.drivers.get("EnergyMeter1")
+        if not drv:
+            self.txt_meter_console.append("Error: Energy Meter driver is unavailable.")
+            return
+            
+        if not drv.is_connected:
+            self.txt_meter_console.append(">> Energy Meter is disconnected. Attempting connection...")
+            if not drv.connect():
+                self.txt_meter_console.append("<< Error: Failed to connect to Energy Meter.")
+                return
+            self.txt_meter_console.append("<< Successfully connected to Energy Meter.")
+            
+        try:
+            if mode == "serial":
+                serial_settings = profile.get("serial_settings", {})
+                write_term = serial_settings.get("write_terminator", "\\r\\n")
+                term_bytes_map = {
+                    "\\r\\n": b'\r\n',
+                    "\\r": b'\r',
+                    "\\n": b'\n',
+                    "None": b''
+                }
+                term_bytes = term_bytes_map.get(write_term, b'\r\n')
+
+                # Prepare payload
+                if fmt == "hex":
+                    payload = bytes.fromhex(val.replace(" ", ""))
+                else:
+                    val_processed = val.replace("<CR>", "\r").replace("<LF>", "\n")
+                    payload = val_processed.encode('ascii')
+                    if not (payload.endswith(b'\r') or payload.endswith(b'\n')):
+                        payload += term_bytes
+                
+                if hasattr(drv, "serial_conn") and drv.serial_conn:
+                    drv.serial_conn.reset_input_buffer()
                     
-            success = meter_driver.write_data(obis_code=obis, value=val)
-            self.txt_meter_console.append(f"<< Write result: {'Success' if success else 'Failed'}")
+                success = drv.write_data(payload)
+                if success:
+                    expected_term_hex = cmd_data.get("expected_terminator", "")
+                    expected_resp_hex = cmd_data.get("expected_response", "")
+                    
+                    term = bytes.fromhex(expected_term_hex.replace(" ", "")) if expected_term_hex else (term_bytes if term_bytes else b'\r\n')
+                    exp_resp = bytes.fromhex(expected_resp_hex.replace(" ", "")) if expected_resp_hex else b''
+                    
+                    # Read response
+                    response = drv.read_until(term, timeout=2.0)
+                    if not response:
+                        self.txt_meter_console.append("<< Error: Meter did not respond within timeout.")
+                        return
+                        
+                    resp_str = response.hex().upper() if fmt == 'hex' else response.decode('utf-8', errors='ignore').strip()
+                    self.txt_meter_console.append(f"<< Response: {resp_str}")
+                    
+                    if exp_resp and exp_resp not in response:
+                        self.txt_meter_console.append(f"<< Error: Expected response '{exp_resp.hex()}' not found.")
+                else:
+                    self.txt_meter_console.append("<< Error: Failed to write serial data.")
+            elif mode == "dlms":
+                obis = val
+                res = drv.read_data(obis)
+                self.txt_meter_console.append(f"<< DLMS Result: {res}")
         except Exception as e:
             self.txt_meter_console.append(f"<< Error: {e}")
 
@@ -1013,7 +1137,7 @@ class DebugPage(QWidget, Ui_DebugPage):
         # Disable/Enable debug controls depending on test_running
         self.plc_grid_box.setEnabled(not test_running)
         self.plc_gen_box.setEnabled(not test_running)
-        self.dlms_box.setEnabled(not test_running)
+        self.meter_controls_box.setEnabled(not test_running)
         if hasattr(self, 'mfm1_utility_box'):
             self.mfm1_utility_box.setEnabled(not test_running)
         if hasattr(self, 'mfm2_utility_box'):
@@ -1035,20 +1159,6 @@ class DebugPage(QWidget, Ui_DebugPage):
 
         # 3. Update Energy Meter
         self.update_connection_led(self.lbl_meter_led, self.lbl_meter_status, data.get("meter_connected", False))
-        readings = data.get("meter_readings")
-        if readings is not None:
-            if isinstance(readings, dict):
-                v = readings.get("voltage", 0.0)
-                i = readings.get("current", 0.0)
-                pf = readings.get("power_factor", 1.0)
-                active_p = v * i * pf
-                
-                self.lbl_meter_val_v.setText(f"{v:.1f} V")
-                self.lbl_meter_val_i.setText(f"{i:.3f} A")
-                self.lbl_meter_val_pf.setText(f"{pf:.2f}")
-                self.lbl_meter_val_w.setText(f"{active_p:.1f} W")
-            elif isinstance(readings, (int, float)):
-                self.lbl_meter_val_i.setText(f"{readings:.3f} A")
 
         # 4. Update MFM Meter 1
         if hasattr(self, 'lbl_mfm1_led'):

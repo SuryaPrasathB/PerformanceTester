@@ -20,6 +20,17 @@ class SerialDriver(BaseDriver):
             self.is_connected = True
             return True
             
+        if self.is_connected and self.serial_conn and self.serial_conn.is_open:
+            return True
+
+        # Clean up any existing connection before retrying to prevent port leaks
+        if self.serial_conn:
+            try:
+                self.serial_conn.close()
+            except Exception:
+                pass
+            self.serial_conn = None
+            
         try:
             self.serial_conn = serial.Serial(self.port, self.baudrate, timeout=1)
             self.is_connected = self.serial_conn.is_open
@@ -27,6 +38,19 @@ class SerialDriver(BaseDriver):
                 self.logger.info(f"Serial connected to {self.port} at {self.baudrate} baud.")
             return self.is_connected
         except serial.SerialException as e:
+            # If access is denied, maybe the port is temporarily releasing. Wait and retry once.
+            if "Access is denied" in str(e) or "PermissionError" in str(e) or "PermissionError" in repr(e):
+                self.logger.warning(f"Access denied to serial port {self.port}. Retrying connection in 0.5 seconds...")
+                time.sleep(0.5)
+                try:
+                    self.serial_conn = serial.Serial(self.port, self.baudrate, timeout=1)
+                    self.is_connected = self.serial_conn.is_open
+                    if self.is_connected:
+                        self.logger.info(f"Serial connected to {self.port} at {self.baudrate} baud after retry.")
+                    return self.is_connected
+                except serial.SerialException as retry_e:
+                    self.logger.error(f"Failed to connect to Serial on {self.port} after retry: {retry_e}")
+            
             self.logger.error(f"Failed to connect to Serial on {self.port}: {e}")
             self.is_connected = False
             return False

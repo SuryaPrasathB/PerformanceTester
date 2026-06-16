@@ -10,7 +10,7 @@
     {
       "name": "EnergyMeter1",
       "type": "dlms",
-      "port": "COM2",
+      "port": "COM5",
       "baudrate": 9600,
       "mock": false
     },

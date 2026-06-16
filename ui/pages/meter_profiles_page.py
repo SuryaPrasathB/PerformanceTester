@@ -140,8 +140,11 @@ class MeterProfilesPage(QWidget):
         self.input_baudrate = QComboBox()
         self.input_baudrate.addItems(["9600", "19200", "38400", "57600", "115200"])
         self.input_timeout = QLineEdit()
+        self.combo_write_term = QComboBox()
+        self.combo_write_term.addItems(["\\r\\n (CRLF)", "\\r (CR)", "\\n (LF)", "None"])
         serial_layout.addRow("Baudrate:", self.input_baudrate)
         serial_layout.addRow("Timeout (s):", self.input_timeout)
+        serial_layout.addRow("Write Terminator:", self.combo_write_term)
         form_layout.addRow(self.serial_container)
 
         # Commands Section
@@ -185,6 +188,7 @@ class MeterProfilesPage(QWidget):
             }
 
         add_command_row("read_serial_number", "Read Serial Number")
+        add_command_row("unlock", "Unlock Command")
         add_command_row("close_load_switch", "Close Load Switch")
         add_command_row("open_load_switch", "Open Load Switch")
 
@@ -250,6 +254,7 @@ class MeterProfilesPage(QWidget):
             self.input_auth_key.clear()
             self.input_block_cipher_key.clear()
             self.input_timeout.clear()
+            self.combo_write_term.setCurrentIndex(0)
             
             for key, inputs in self.cmd_inputs.items():
                 inputs["val_input"].clear()
@@ -277,6 +282,7 @@ class MeterProfilesPage(QWidget):
         self.input_block_cipher_key.clear()
         self.input_baudrate.setCurrentText("9600")
         self.input_timeout.setText("2.0")
+        self.combo_write_term.setCurrentIndex(0)
         
         for key, inputs in self.cmd_inputs.items():
             inputs["val_input"].clear()
@@ -314,6 +320,14 @@ class MeterProfilesPage(QWidget):
         serial = profile.get("serial_settings", {})
         self.input_baudrate.setCurrentText(str(serial.get("baudrate", "9600")))
         self.input_timeout.setText(str(serial.get("timeout", "2.0")))
+        write_term = serial.get("write_terminator", "\\r\\n")
+        term_map = {
+            "\\r\\n": "\\r\\n (CRLF)",
+            "\\r": "\\r (CR)",
+            "\\n": "\\n (LF)",
+            "None": "None"
+        }
+        self.combo_write_term.setCurrentText(term_map.get(write_term, "\\r\\n (CRLF)"))
         
         cmds = profile.get("commands", {})
         for key, inputs in self.cmd_inputs.items():
@@ -344,7 +358,8 @@ class MeterProfilesPage(QWidget):
             },
             "serial_settings": {
                 "baudrate": int(self.input_baudrate.currentText() or 9600),
-                "timeout": float(self.input_timeout.text() or 2.0)
+                "timeout": float(self.input_timeout.text() or 2.0),
+                "write_terminator": self.combo_write_term.currentText().split(" ")[0]
             },
             "commands": {}
         }

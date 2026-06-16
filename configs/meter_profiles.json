@@ -6,7 +6,8 @@
       "communication_mode": "Serial",
       "serial_settings": {
         "baudrate": 9600,
-        "timeout": 2.0
+        "timeout": 2.0,
+        "write_terminator": "\\r"
       },
       "commands": {
         "read_serial_number": {
@@ -15,17 +16,23 @@
           "expected_response": "7E A0",
           "expected_terminator": "7E"
         },
+        "unlock": {
+          "value": "PrGunlock",
+          "format": "ASCII",
+          "expected_response": "",
+          "expected_terminator": "0D"
+        },
         "close_load_switch": {
-          "value": "7E A0 08 03 21 93 0F 02 7E", 
-          "format": "Hex",
-          "expected_response": "7E A0",
-          "expected_terminator": "7E"
+          "value": "rEL1",
+          "format": "ASCII",
+          "expected_response": "",
+          "expected_terminator": "0D"
         },
         "open_load_switch": {
-          "value": "7E A0 09 03 21 93 0F 03 7E", 
-          "format": "Hex",
-          "expected_response": "7E A0",
-          "expected_terminator": "7E"
+          "value": "rEL2",
+          "format": "ASCII",
+          "expected_response": "",
+          "expected_terminator": "0D"
         }
       }
     },

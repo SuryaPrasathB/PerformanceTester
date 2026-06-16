@@ -221,7 +221,6 @@ class TestBuilder:
 
     def send_meter_command(self, command_key: str):
         def action(ctx, hw):
-            ctx.update_status(f"Sending Meter Command: {command_key}")
             profile = getattr(ctx, "meter_profile", None)
             if not profile:
                 from services.profile_manager import ProfileManager
@@ -231,101 +230,123 @@ class TestBuilder:
                     raise Exception("No meter profiles configured.")
                 profile = profiles[0] # Fallback
             
-            cmd_data = profile.get("commands", {}).get(command_key)
-            if not cmd_data:
-                raise Exception(f"Command '{command_key}' not mapped in profile '{profile.get('name')}'.")
+            def execute_single_command(key: str, is_auto_unlock: bool = False):
+                cmd_data = profile.get("commands", {}).get(key)
+                if not cmd_data:
+                    if is_auto_unlock:
+                        ctx.logger.info("Auto-unlock: 'unlock' command not mapped in profile. Skipping.")
+                        return
+                    raise Exception(f"Command '{key}' not mapped in profile '{profile.get('name')}'.")
                 
-            val = cmd_data.get("value", "")
-            fmt = cmd_data.get("format", "Hex").lower()
-            mode = profile.get("communication_mode", "DLMS").lower()
-            
-            ctx.logger.info(f"Sending via {profile.get('communication_mode')}: {val} [{cmd_data.get('format')}]")
-            
-            if mode == "serial":
-                # Prepare payload
-                if fmt == "hex":
-                    payload = bytes.fromhex(val.replace(" ", ""))
-                else:
-                    payload = val.encode('ascii')
+                val = cmd_data.get("value", "")
+                if not val and is_auto_unlock:
+                    ctx.logger.info("Auto-unlock: 'unlock' command value is empty. Skipping.")
+                    return
                 
-                # Append terminator. If the user provided one in the profile, we could use it. 
-                # Otherwise, default to \r\n for ascii, or no terminator for hex unless specified.
-                payload += b'\r\n'
+                ctx.update_status(f"Sending Meter Command: {key}")
+                fmt = cmd_data.get("format", "Hex").lower()
+                mode = profile.get("communication_mode", "DLMS").lower()
                 
-                # Verify we have the correct driver type
-                drv = hw.energymeter_drv
-                if drv and drv.__class__.__name__ == "SerialDriver":
-                    if not drv.is_connected:
-                        drv.connect()
-                    
-                    # Flush before write
-                    if drv.serial_conn:
-                        drv.serial_conn.reset_input_buffer()
-                        
-                    success = drv.write_data(payload)
-                    if success:
-                        ctx.logger.info(f"Sent {len(payload)} bytes over Serial.")
-                        
-                        expected_term_hex = cmd_data.get("expected_terminator", "")
-                        expected_resp_hex = cmd_data.get("expected_response", "")
-                        
-                        term = bytes.fromhex(expected_term_hex.replace(" ", "")) if expected_term_hex else b'\r\n'
-                        exp_resp = bytes.fromhex(expected_resp_hex.replace(" ", "")) if expected_resp_hex else b''
-                        
-                        # Read until terminator or 2.0s timeout
-                        response = drv.read_until(term, timeout=2.0)
-                        
-                        if not response:
-                            raise Exception("Meter did not respond within the timeout period.")
-                            
-                        ctx.logger.info(f"Received Response: {response.hex().upper() if fmt == 'hex' else response}")
-                        
-                        if command_key == "read_serial_number":
-                            try:
-                                serial_str = response.decode('utf-8', errors='ignore').strip()
-                                if serial_str:
-                                    ctx.meter_serial_number = serial_str
-                                    ctx.logger.info(f"Saved read serial number to context: {serial_str}")
-                            except Exception as e:
-                                ctx.logger.warning(f"Could not parse serial number: {e}")
+                ctx.logger.info(f"Sending via {profile.get('communication_mode')}: {val} [{cmd_data.get('format')}]")
+                
+                if mode == "serial":
+                    serial_settings = profile.get("serial_settings", {})
+                    write_term = serial_settings.get("write_terminator", "\\r\\n")
+                    term_bytes_map = {
+                        "\\r\\n": b'\r\n',
+                        "\\r": b'\r',
+                        "\\n": b'\n',
+                        "None": b''
+                    }
+                    term_bytes = term_bytes_map.get(write_term, b'\r\n')
 
-                        if exp_resp and exp_resp not in response:
-                            ctx.logger.error(f"Expected response '{exp_resp.hex()}' not found in '{response.hex()}'")
-                            raise Exception(f"Validation failed: Expected response not found.")
-                        
-                        ctx.logger.info("Meter response validated successfully.")
+                    # Prepare payload
+                    if fmt == "hex":
+                        payload = bytes.fromhex(val.replace(" ", ""))
                     else:
-                        ctx.logger.error("Failed to write to Serial driver.")
-                        raise Exception("Serial write failed.")
-                else:
-                    ctx.logger.error("Meter profile specifies Serial, but driver in config is not SerialDriver.")
-                    raise Exception("Driver type mismatch.")
-            elif mode == "dlms":
-                drv = hw.energymeter_drv
-                if drv and drv.__class__.__name__ == "DlmsDriver":
-                    # value is expected to be an OBIS code
-                    # If expected_response is provided and not empty, it's a read. 
-                    # If we have a write value? For now, assume these are reads unless configured differently.
-                    obis = val
-                    ctx.logger.info(f"Reading DLMS OBIS code: {obis}")
-                    res = drv.read_data(obis)
-                    ctx.logger.info(f"DLMS Read result: {res}")
+                        val_processed = val.replace("<CR>", "\r").replace("<LF>", "\n")
+                        payload = val_processed.encode('ascii')
+                        if not (payload.endswith(b'\r') or payload.endswith(b'\n')):
+                            payload += term_bytes
                     
-                    if command_key == "read_serial_number" and res is not None:
-                        if isinstance(res, dict):
-                            ctx.meter_serial_number = "MOCK_DLMS_SERIAL"
+                    drv = hw.energymeter_drv
+                    if drv and drv.__class__.__name__ == "SerialDriver":
+                        if not drv.is_connected:
+                            drv.connect()
+                        
+                        if drv.serial_conn:
+                            drv.serial_conn.reset_input_buffer()
+                            
+                        success = drv.write_data(payload)
+                        if success:
+                            ctx.logger.info(f"Sent {len(payload)} bytes over Serial.")
+                            
+                            expected_term_hex = cmd_data.get("expected_terminator", "")
+                            expected_resp_hex = cmd_data.get("expected_response", "")
+                            
+                            term = bytes.fromhex(expected_term_hex.replace(" ", "")) if expected_term_hex else (term_bytes if term_bytes else b'\r\n')
+                            exp_resp = bytes.fromhex(expected_resp_hex.replace(" ", "")) if expected_resp_hex else b''
+                            
+                            response = drv.read_until(term, timeout=2.0)
+                            
+                            if not response:
+                                raise Exception(f"Meter did not respond to '{key}' command within the timeout period.")
+                                
+                            ctx.logger.info(f"Received Response: {response.hex().upper() if fmt == 'hex' else response}")
+                            
+                            if key == "read_serial_number":
+                                try:
+                                    serial_str = response.decode('utf-8', errors='ignore').strip()
+                                    if serial_str:
+                                        ctx.meter_serial_number = serial_str
+                                        ctx.logger.info(f"Saved read serial number to context: {serial_str}")
+                                except Exception as e:
+                                    ctx.logger.warning(f"Could not parse serial number: {e}")
+                                    
+                            if exp_resp and exp_resp not in response:
+                                ctx.logger.error(f"Expected response '{exp_resp.hex()}' not found in '{response.hex()}'")
+                                raise Exception(f"Validation failed: Expected response not found for '{key}' command.")
+                            
+                            ctx.logger.info(f"Meter response for '{key}' validated successfully.")
                         else:
-                            ctx.meter_serial_number = str(res).strip()
-                        ctx.logger.info(f"Saved read serial number to context: {ctx.meter_serial_number}")
-                    
-                    exp_resp = str(cmd_data.get("expected_response", "")).strip()
-                    if exp_resp:
-                        if str(res) != exp_resp:
-                            raise Exception(f"DLMS Validation failed: Expected '{exp_resp}', got '{res}'")
-                        ctx.logger.info("DLMS response validated successfully.")
-                else:
-                    ctx.logger.error("Meter profile specifies DLMS, but driver is not DlmsDriver.")
-                    raise Exception("Driver type mismatch.")
+                            ctx.logger.error(f"Failed to write to Serial driver for '{key}' command.")
+                            raise Exception("Serial write failed.")
+                    else:
+                        ctx.logger.error("Meter profile specifies Serial, but driver in config is not SerialDriver.")
+                        raise Exception("Driver type mismatch.")
+                elif mode == "dlms":
+                    drv = hw.energymeter_drv
+                    if drv and drv.__class__.__name__ == "DlmsDriver":
+                        obis = val
+                        ctx.logger.info(f"Reading DLMS OBIS code: {obis}")
+                        res = drv.read_data(obis)
+                        ctx.logger.info(f"DLMS Read result: {res}")
+                        
+                        if key == "read_serial_number" and res is not None:
+                            if isinstance(res, dict):
+                                ctx.meter_serial_number = "MOCK_DLMS_SERIAL"
+                            else:
+                                ctx.meter_serial_number = str(res).strip()
+                            ctx.logger.info(f"Saved read serial number to context: {ctx.meter_serial_number}")
+                        
+                        exp_resp = str(cmd_data.get("expected_response", "")).strip()
+                        if exp_resp:
+                            if str(res) != exp_resp:
+                                raise Exception(f"DLMS Validation failed: Expected '{exp_resp}', got '{res}'")
+                            ctx.logger.info("DLMS response validated successfully.")
+                    else:
+                        ctx.logger.error("Meter profile specifies DLMS, but driver is not DlmsDriver.")
+                        raise Exception("Driver type mismatch.")
+
+            # Send unlock before switch operation if unlock is configured and has a value
+            if command_key in ["close_load_switch", "open_load_switch"]:
+                unlock_cmd = profile.get("commands", {}).get("unlock")
+                if unlock_cmd and unlock_cmd.get("value"):
+                    execute_single_command("unlock", is_auto_unlock=True)
+                    time.sleep(0.2)
+            
+            execute_single_command(command_key)
+
         self.add_step(f"Send Command: {command_key}", action, device="Energy Meter")
         return self
 
