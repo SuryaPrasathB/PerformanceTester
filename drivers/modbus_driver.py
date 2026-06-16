@@ -222,5 +222,58 @@ class ModbusDriver(BaseDriver):
                 self.logger.error(f"Error reading float from address {address} (mapped to {reg_addr}): {e}")
                 return 0.0
 
+    def read_coil(self, address: int, slave: int = 1) -> bool:
+        """Reads a single coil (binary value) from the Modbus device."""
+        with self._lock:
+            if self.mock_mode:
+                time.sleep(0.01)
+                if not hasattr(self, "_mock_coils"):
+                    self._mock_coils = {}
+                return self._mock_coils.get(address, False)
+
+            if not self.is_connected or not self.client:
+                self.logger.error("Cannot read coil: Modbus not connected.")
+                return False
+
+            try:
+                result = self.client.read_coils(address=address, count=1, slave=slave)
+                if result.isError():
+                    self.logger.error(f"Modbus read coil error (addr={address}): {result}")
+                    return False
+                val = result.bits[0] if result.bits else False
+                self.logger.debug(f"Modbus read coil (addr={address}): {val}")
+                return val
+            except Exception as e:
+                self.logger.error(f"Modbus read coil exception (addr={address}): {e}")
+                return False
+
+    def write_coil(self, address: int, value: bool, slave: int = 1) -> bool:
+        """Writes a single coil (binary value) to the Modbus device."""
+        with self._lock:
+            # Clear read cache on any write to guarantee consistency
+            self._cache.clear()
+
+            if self.mock_mode:
+                time.sleep(0.01)
+                if not hasattr(self, "_mock_coils"):
+                    self._mock_coils = {}
+                self._mock_coils[address] = value
+                return True
+
+            if not self.is_connected or not self.client:
+                self.logger.error("Cannot write coil: Modbus not connected.")
+                return False
+
+            try:
+                result = self.client.write_coil(address=address, value=value, slave=slave)
+                if result.isError():
+                    self.logger.error(f"Modbus write coil error (addr={address}, val={value}): {result}")
+                    return False
+                self.logger.debug(f"Modbus wrote coil {value} to address {address}.")
+                return True
+            except Exception as e:
+                self.logger.error(f"Modbus write coil exception (addr={address}, val={value}): {e}")
+                return False
+
 
 

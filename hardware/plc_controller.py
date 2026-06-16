@@ -14,10 +14,14 @@ class PLCController:
         
     def write_coil(self, address: int, value: bool) -> bool:
         """Raw write to a Modbus coil."""
+        if hasattr(self.modbus_driver, "write_coil"):
+            return self.modbus_driver.write_coil(address=address, value=value)
         return self.modbus_driver.write_data(address=address, value=1 if value else 0)
 
     def read_coil(self, address: int) -> bool:
         """Raw read from a Modbus coil."""
+        if hasattr(self.modbus_driver, "read_coil"):
+            return self.modbus_driver.read_coil(address=address)
         data = self.modbus_driver.read_data(address=address, count=1)
         return bool(data[0]) if data else False
 
@@ -43,13 +47,8 @@ class PLCController:
             return False
             
         coil_address = self.coils[channel_name]
-        value = 1 if state else 0
         self.logger.info(f"PLC: Setting output '{channel_name}' (coil {coil_address}) to {state}")
-        # Note: Depending on modbus library, write_coil might be separate from write_register.
-        # Here we assume the modbus_driver write_data handles coils or we will use it for register.
-        # We will assume write_data can be used, or driver needs write_coil method.
-        # But modbus_driver only has write_data. Let's use it as is for now.
-        return self.modbus_driver.write_data(address=coil_address, value=value)
+        return self.write_coil(address=coil_address, value=state)
 
     def read_input(self, channel_name: str) -> int:
         """Reads a mapped register input."""

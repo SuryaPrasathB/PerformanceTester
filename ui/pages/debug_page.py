@@ -613,7 +613,11 @@ class DebugPage(QWidget, Ui_DebugPage):
         current_val = self.coil_states.get(coil_enum, False)
         new_val = not current_val
         
-        success = plc_driver.write_data(address=addr, value=1 if new_val else 0)
+        if hasattr(plc_driver, "write_coil"):
+            success = plc_driver.write_coil(address=addr, value=new_val)
+        else:
+            success = plc_driver.write_data(address=addr, value=1 if new_val else 0)
+            
         if success:
             self.coil_states[coil_enum] = new_val
             self.update_coil_led(coil_enum, new_val)
@@ -652,14 +656,18 @@ class DebugPage(QWidget, Ui_DebugPage):
             addr = int(addr_str, 0)
             is_coil = self.cmb_plc_gen_type.currentText().startswith("Coil")
             
-            data = plc_driver.read_data(address=addr, count=1)
-            if data and len(data) > 0:
-                val = data[0]
-                if is_coil:
-                    val = bool(val)
+            if is_coil and hasattr(plc_driver, "read_coil"):
+                val = plc_driver.read_coil(address=addr)
                 self.lbl_plc_gen_result.setText(f"Result: {val}")
             else:
-                self.lbl_plc_gen_result.setText("No Response")
+                data = plc_driver.read_data(address=addr, count=1)
+                if data and len(data) > 0:
+                    val = data[0]
+                    if is_coil:
+                        val = bool(val)
+                    self.lbl_plc_gen_result.setText(f"Result: {val}")
+                else:
+                    self.lbl_plc_gen_result.setText("No Response")
         except Exception as e:
             self.lbl_plc_gen_result.setText(f"Error: {e}")
 
@@ -676,11 +684,14 @@ class DebugPage(QWidget, Ui_DebugPage):
             is_coil = self.cmb_plc_gen_type.currentText().startswith("Coil")
             
             if is_coil:
-                val = 1 if val_str.lower() in ("true", "1", "on", "yes") else 0
+                val = val_str.lower() in ("true", "1", "on", "yes")
+                if hasattr(plc_driver, "write_coil"):
+                    success = plc_driver.write_coil(address=addr, value=val)
+                else:
+                    success = plc_driver.write_data(address=addr, value=1 if val else 0)
             else:
                 val = int(val_str, 0)
-                
-            success = plc_driver.write_data(address=addr, value=val)
+                success = plc_driver.write_data(address=addr, value=val)
             self.lbl_plc_gen_result.setText("Result: Success" if success else "Result: Failed")
         except Exception as e:
             self.lbl_plc_gen_result.setText(f"Error: {e}")
@@ -792,9 +803,12 @@ class DebugPage(QWidget, Ui_DebugPage):
             try:
                 for coil_enum in PLCCoil:
                     addr = int(coil_enum)
-                    # Coil addresses are mapped as holding registers in modbus driver
-                    data = plc_driver.read_data(address=addr, count=1)
-                    val = bool(data[0]) if data else False
+                    if hasattr(plc_driver, "read_coil"):
+                        val = plc_driver.read_coil(address=addr)
+                    else:
+                        # Coil addresses are mapped as holding registers in modbus driver
+                        data = plc_driver.read_data(address=addr, count=1)
+                        val = bool(data[0]) if data else False
                     self.update_coil_led(coil_enum, val)
             except Exception as e:
                 pass

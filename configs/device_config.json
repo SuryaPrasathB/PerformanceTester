@@ -3,9 +3,9 @@
     {
       "name": "PLC1",
       "type": "modbus",
-      "ip": "192.168.0.110",
+      "ip": "192.168.0.118",
       "port": "502",
-      "mock": true
+      "mock": false
     },
     {
       "name": "EnergyMeter1",
@@ -20,16 +20,10 @@
       "port": "COM1",
       "baudrate": 9600,
       "mock": true
-    },
-    {
-      "name": "PicoScope1",
-      "type": "picoscope",
-      "port": "USB",
-      "mock": false
     }
   ],
   "plc": {
-    "ip": "192.168.0.110",
+    "ip": "192.168.0.118",
     "coils": {
       "relay_main": 0,
       "fault_trigger": 1,
