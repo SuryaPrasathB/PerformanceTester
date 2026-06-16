@@ -19,8 +19,12 @@ class G7MinimumSwitchedCurrentTest(BaseTest):
         
         # Start background current sensing in parallel
         def current_sensing_monitor(ctx, hw):
-            # Actual implementation would read from MFM continuously
-            pass
+            try:
+                # Read MFM current (which will automatically read from MFM Meter 2 because test_identifier is "g7")
+                current = getattr(hw, "read_mfm_current", lambda: 0.0)()
+                ctx.update_runtime_value("current", current)
+            except Exception as e:
+                ctx.logger.error(f"Error in Current Sensing Monitor: {e}")
             
         builder.start_background_monitor("current_sensing", current_sensing_monitor)
         

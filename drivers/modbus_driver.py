@@ -8,6 +8,10 @@ class ModbusDriver(BaseDriver):
     """
     Modbus Driver for communicating with PLC (TCP) or MFM (RTU Serial) via Modbus.
     """
+    _shared_clients = {}
+    _shared_locks = {}
+    _client_refcounts = {}
+
     def __init__(self, config: dict, logger: logging.Logger):
         super().__init__(config, logger)
         self.ip = config.get("ip", "127.0.0.1")
@@ -40,7 +44,7 @@ class ModbusDriver(BaseDriver):
             
         self.client = None
         self.is_serial = False
-        self._lock = threading.RLock()
+        self.slave_id = int(config.get("slave_id", config.get("slave", 1)))
         
         # 200ms Read Cache to prevent bombarding meter with requests from multiple threads
         self._cache = {}
@@ -49,6 +53,15 @@ class ModbusDriver(BaseDriver):
         # Determine if serial client based on port string format (e.g., COM1, /dev/ttyUSB0)
         if isinstance(self.port, str) and (self.port.upper().startswith("COM") or self.port.startswith("/dev/")):
             self.is_serial = True
+
+        # Use shared lock if sharing serial port
+        if self.is_serial:
+            port_key = self.port.upper() if isinstance(self.port, str) else str(self.port)
+            if port_key not in ModbusDriver._shared_locks:
+                ModbusDriver._shared_locks[port_key] = threading.RLock()
+            self._lock = ModbusDriver._shared_locks[port_key]
+        else:
+            self._lock = threading.RLock()
 
     def connect(self) -> bool:
         """Establishes Modbus TCP or Serial RTU connection."""
@@ -60,6 +73,14 @@ class ModbusDriver(BaseDriver):
 
             try:
                 if self.is_serial:
+                    port_key = self.port.upper() if isinstance(self.port, str) else str(self.port)
+                    if port_key in ModbusDriver._shared_clients:
+                        self.client = ModbusDriver._shared_clients[port_key]
+                        ModbusDriver._client_refcounts[port_key] = ModbusDriver._client_refcounts.get(port_key, 0) + 1
+                        self.is_connected = self.client.connected if hasattr(self.client, 'connected') else True
+                        self.logger.info(f"Reusing shared Modbus RTU client on {self.port}.")
+                        return self.is_connected
+                    
                     self.logger.info(f"Connecting to Modbus RTU on {self.port} (Baud: {self.baudrate}, Parity: {self.parity})...")
                     self.client = ModbusSerialClient(
                         port=self.port,
@@ -69,19 +90,21 @@ class ModbusDriver(BaseDriver):
                         stopbits=int(self.stopbits),
                         timeout=float(self.timeout)
                     )
+                    self.is_connected = self.client.connect()
+                    if self.is_connected:
+                        ModbusDriver._shared_clients[port_key] = self.client
+                        ModbusDriver._client_refcounts[port_key] = 1
+                        self.logger.info(f"Modbus RTU connected to {self.port}.")
+                    else:
+                        self.logger.error(f"Failed to connect to Modbus RTU on {self.port}.")
                 else:
                     self.logger.info(f"Connecting to Modbus TCP on {self.ip}:{self.port}...")
                     self.client = ModbusTcpClient(self.ip, port=int(self.port), timeout=float(self.timeout))
-                    
-                self.is_connected = self.client.connect()
-                if self.is_connected:
-                    conn_type = "RTU" if self.is_serial else "TCP"
-                    target = self.port if self.is_serial else f"{self.ip}:{self.port}"
-                    self.logger.info(f"Modbus {conn_type} connected to {target}.")
-                else:
-                    conn_type = "RTU" if self.is_serial else "TCP"
-                    target = self.port if self.is_serial else f"{self.ip}:{self.port}"
-                    self.logger.error(f"Failed to connect to Modbus {conn_type} on {target}.")
+                    self.is_connected = self.client.connect()
+                    if self.is_connected:
+                        self.logger.info(f"Modbus TCP connected to {self.ip}:{self.port}.")
+                    else:
+                        self.logger.error(f"Failed to connect to Modbus TCP on {self.ip}:{self.port}.")
                 return self.is_connected
             except Exception as e:
                 self.logger.error(f"Modbus connection exception on {self.port or self.ip}: {e}")
@@ -97,15 +120,31 @@ class ModbusDriver(BaseDriver):
                 return True
 
             if self.client:
-                self.client.close()
+                if self.is_serial:
+                    port_key = self.port.upper() if isinstance(self.port, str) else str(self.port)
+                    ref = ModbusDriver._client_refcounts.get(port_key, 0)
+                    if ref > 1:
+                        ModbusDriver._client_refcounts[port_key] = ref - 1
+                        self.logger.info(f"Decremented shared client refcount on {self.port} to {ref - 1}. Client remains open.")
+                    else:
+                        self.client.close()
+                        if port_key in ModbusDriver._shared_clients:
+                            del ModbusDriver._shared_clients[port_key]
+                        if port_key in ModbusDriver._client_refcounts:
+                            del ModbusDriver._client_refcounts[port_key]
+                        self.logger.info(f"Closed shared Modbus RTU client on {self.port}.")
+                else:
+                    self.client.close()
+                    self.logger.info(f"Modbus disconnected.")
                 self.is_connected = False
-                self.logger.info(f"Modbus disconnected.")
             # Clear cache upon disconnect
             self._cache.clear()
             return True
 
-    def read_data(self, address: int = 0, count: int = 1, slave: int = 1, function_code: int = 3) -> list:
+    def read_data(self, address: int = 0, count: int = 1, slave: int = None, function_code: int = 3) -> list:
         """Reads input or holding registers from the Modbus device."""
+        if slave is None:
+            slave = self.slave_id
         with self._lock:
             # Check cache
             key = ('data', address, count, slave, function_code)
@@ -144,8 +183,10 @@ class ModbusDriver(BaseDriver):
                 self.logger.error(f"Modbus read exception (FC={function_code}, addr={address}): {e}")
                 return []
 
-    def write_data(self, address: int, value: int, slave: int = 1) -> bool:
+    def write_data(self, address: int, value: int, slave: int = None) -> bool:
         """Writes to a single register (or coil if mapped)."""
+        if slave is None:
+            slave = self.slave_id
         with self._lock:
             # Clear read cache on any write to guarantee consistency
             self._cache.clear()
@@ -169,10 +210,12 @@ class ModbusDriver(BaseDriver):
                 self.logger.error(f"Modbus write exception (addr={address}, val={value}): {e}")
                 return False
 
-    def read_float(self, address: int, function_code: int = 4, swapped: bool = True, slave: int = 1) -> float:
+    def read_float(self, address: int, function_code: int = 4, swapped: bool = True, slave: int = None) -> float:
         """
         Reads two 16-bit registers (32-bit total) and decodes them as a float.
         """
+        if slave is None:
+            slave = self.slave_id
         with self._lock:
             # Check cache
             key = ('float', address, function_code, swapped, slave)
@@ -222,8 +265,10 @@ class ModbusDriver(BaseDriver):
                 self.logger.error(f"Error reading float from address {address} (mapped to {reg_addr}): {e}")
                 return 0.0
 
-    def read_coil(self, address: int, slave: int = 1) -> bool:
+    def read_coil(self, address: int, slave: int = None) -> bool:
         """Reads a single coil (binary value) from the Modbus device."""
+        if slave is None:
+            slave = self.slave_id
         with self._lock:
             if self.mock_mode:
                 time.sleep(0.01)
@@ -247,8 +292,10 @@ class ModbusDriver(BaseDriver):
                 self.logger.error(f"Modbus read coil exception (addr={address}): {e}")
                 return False
 
-    def write_coil(self, address: int, value: bool, slave: int = 1) -> bool:
+    def write_coil(self, address: int, value: bool, slave: int = None) -> bool:
         """Writes a single coil (binary value) to the Modbus device."""
+        if slave is None:
+            slave = self.slave_id
         with self._lock:
             # Clear read cache on any write to guarantee consistency
             self._cache.clear()

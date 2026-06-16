@@ -19,6 +19,15 @@
       "type": "modbus",
       "port": "COM1",
       "baudrate": 9600,
+      "slave_id": 1,
+      "mock": true
+    },
+    {
+      "name": "MFMMeter2",
+      "type": "modbus",
+      "port": "COM1",
+      "baudrate": 9600,
+      "slave_id": 2,
       "mock": true
     }
   ],

@@ -21,6 +21,7 @@ class HardwareService(QObject):
         super().__init__()
         self.device_manager = device_manager
         self.logger = logging.getLogger(__name__)
+        self.context = None
         
         # Pull global config dict
         self.config = {
@@ -32,6 +33,7 @@ class HardwareService(QObject):
         self.energymeter_drv = None
         self.picoscope_drv = None
         self.mfm_drv = None
+        self.mfm2_drv = None
         
         # Logical hardware controllers
         self.plc_controller = None
@@ -55,6 +57,11 @@ class HardwareService(QObject):
         return self.mfm_drv
 
     @property
+    def mfm2(self):
+        """Direct access to the MFM Meter 2 driver (mA/G7 current)."""
+        return self.mfm2_drv
+
+    @property
     def picoscope(self):
         """Direct access to the PicoScope driver."""
         return self.picoscope_drv
@@ -74,6 +81,7 @@ class HardwareService(QObject):
         self.energymeter_drv = self.device_manager.drivers.get("EnergyMeter1")
         self.picoscope_drv = self.device_manager.drivers.get("PicoScope1")
         self.mfm_drv = self.device_manager.drivers.get("MFMMeter1") # Using specific MFM Meter
+        self.mfm2_drv = self.device_manager.drivers.get("MFMMeter2")
         self.waveform_counter = 0
 
         if self.energymeter_drv and not self.energymeter_drv.is_connected:
@@ -94,10 +102,15 @@ class HardwareService(QObject):
         
         if self.mfm_drv:
             if not self.mfm_drv.is_connected:
-                self.logger.info("Hardware Service: Auto-connecting MFM Meter...")
+                self.logger.info("Hardware Service: Auto-connecting MFM Meter 1...")
                 self.mfm_drv.connect()
             # We also use the MFM driver for signal injection control if applicable
             self.signal_injection = SignalInjection(self.mfm_drv, self.config)
+            
+        if self.mfm2_drv:
+            if not self.mfm2_drv.is_connected:
+                self.logger.info("Hardware Service: Auto-connecting MFM Meter 2...")
+                self.mfm2_drv.connect()
             
         self.hardware_status_update.emit("System", "Initialization Complete")
 
@@ -187,48 +200,69 @@ class HardwareService(QObject):
     def read_mfm_telemetry(self) -> dict:
         """
         Reads Voltage, Current, and Power Factor from the MFM Meter.
+        During G7, current is read from MFM Meter 2, while voltage and PF are read from MFM Meter 1.
         """
-        if not self.mfm_drv or not self.mfm_drv.is_connected:
+        is_g7 = False
+        if hasattr(self, 'context') and self.context:
+            is_g7 = (getattr(self.context, "test_identifier", None) == "g7")
+
+        drv_v_pf = self.mfm_drv
+        drv_i = self.mfm2_drv if (is_g7 and self.mfm2_drv) else self.mfm_drv
+
+        if not drv_v_pf or not drv_v_pf.is_connected:
             return {}
         try:
             from core.hardware_mapping import MFMRegister
-            if hasattr(self.mfm_drv, "read_float"):
-                v = self.mfm_drv.read_float(int(MFMRegister.VOLTAGE), function_code=4, swapped=True)
-                i = self.mfm_drv.read_float(int(MFMRegister.CURRENT), function_code=4, swapped=True)
-                pf = self.mfm_drv.read_float(int(MFMRegister.PF), function_code=4, swapped=True)
-                return {
-                    "voltage": v,
-                    "current": i,
-                    "power_factor": pf,
-                    "active_power": v * i * pf
-                }
+            
+            # Read voltage and PF from drv_v_pf
+            v = 0.0
+            pf = 1.0
+            if hasattr(drv_v_pf, "read_float"):
+                v = drv_v_pf.read_float(int(MFMRegister.VOLTAGE), function_code=4, swapped=True)
+                pf = drv_v_pf.read_float(int(MFMRegister.PF), function_code=4, swapped=True)
             else:
-                v_data = self.mfm_drv.read_data(address=int(MFMRegister.VOLTAGE), count=1)
-                i_data = self.mfm_drv.read_data(address=int(MFMRegister.CURRENT), count=1)
-                pf_data = self.mfm_drv.read_data(address=int(MFMRegister.PF), count=1)
+                v_data = drv_v_pf.read_data(address=int(MFMRegister.VOLTAGE), count=1)
+                pf_data = drv_v_pf.read_data(address=int(MFMRegister.PF), count=1)
                 v = v_data[0] if v_data else 0.0
-                i = i_data[0] if i_data else 0.0
                 pf = pf_data[0] if pf_data else 1.0
-                return {
-                    "voltage": v,
-                    "current": i,
-                    "power_factor": pf,
-                    "active_power": v * i * pf
-                }
+
+            # Read current from drv_i
+            i = 0.0
+            if drv_i and drv_i.is_connected:
+                if hasattr(drv_i, "read_float"):
+                    i = drv_i.read_float(int(MFMRegister.CURRENT), function_code=4, swapped=True)
+                else:
+                    i_data = drv_i.read_data(address=int(MFMRegister.CURRENT), count=1)
+                    i = i_data[0] if i_data else 0.0
+
+            return {
+                "voltage": v,
+                "current": i,
+                "power_factor": pf,
+                "active_power": v * i * pf
+            }
         except Exception as e:
             self.logger.error(f"Error reading MFM telemetry: {e}")
         return {}
 
     def read_mfm_current(self) -> float:
-        """Reads instantaneous current from the MFM meter."""
-        if not self.mfm_drv or not self.mfm_drv.is_connected:
+        """
+        Reads instantaneous current from the MFM meter.
+        During G7, current is read from MFM Meter 2.
+        """
+        is_g7 = False
+        if hasattr(self, 'context') and self.context:
+            is_g7 = (getattr(self.context, "test_identifier", None) == "g7")
+
+        drv_i = self.mfm2_drv if (is_g7 and self.mfm2_drv) else self.mfm_drv
+        if not drv_i or not drv_i.is_connected:
             return 0.0
         try:
             from core.hardware_mapping import MFMRegister
-            if hasattr(self.mfm_drv, "read_float"):
-                return self.mfm_drv.read_float(int(MFMRegister.CURRENT), function_code=4, swapped=True)
+            if hasattr(drv_i, "read_float"):
+                return drv_i.read_float(int(MFMRegister.CURRENT), function_code=4, swapped=True)
             else:
-                i_data = self.mfm_drv.read_data(address=int(MFMRegister.CURRENT), count=1)
+                i_data = drv_i.read_data(address=int(MFMRegister.CURRENT), count=1)
                 return i_data[0] if i_data else 0.0
         except Exception as e:
             self.logger.error(f"Error reading MFM current: {e}")

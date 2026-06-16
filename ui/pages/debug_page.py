@@ -1,9 +1,117 @@
 from PySide6.QtWidgets import (QWidget, QScrollArea, QFrame, QLabel, QPushButton,
                                QLineEdit, QComboBox, QGroupBox, QVBoxLayout,
                                QHBoxLayout, QGridLayout, QMessageBox, QTextEdit)
-from PySide6.QtCore import Slot, Qt, QTimer
+from PySide6.QtCore import Slot, Qt, QTimer, QThread, Signal
 from ui.pages.ui_debug_page import Ui_DebugPage
 from core.hardware_mapping import PLCCoil, MFMRegister
+import threading
+import time
+
+class DebugPollWorker(QThread):
+    data_polled = Signal(dict)
+
+    def __init__(self, device_manager, parent=None):
+        super().__init__(parent)
+        self.device_manager = device_manager
+        self._is_running = False
+        self._lock = threading.Lock()
+
+    def stop(self):
+        with self._lock:
+            self._is_running = False
+
+    def run(self):
+        self._is_running = True
+        while True:
+            with self._lock:
+                if not self._is_running:
+                    break
+            
+            try:
+                # 1. Check if test running
+                test_running = False
+                parent_widget = self.parent()
+                if parent_widget and hasattr(parent_widget, 'main_window') and parent_widget.main_window:
+                    mw = parent_widget.main_window
+                    if hasattr(mw, 'test_page') and mw.test_page.test_runner:
+                        test_running = mw.test_page.test_runner.isRunning()
+
+                data = {
+                    "test_running": test_running,
+                    "coil_states": {}
+                }
+
+                # 2. Poll PLC
+                plc_driver = self.device_manager.drivers.get("PLC1")
+                plc_connected = plc_driver and plc_driver.is_connected
+                data["plc_connected"] = plc_connected
+                if plc_connected:
+                    for coil_enum in PLCCoil:
+                        addr = int(coil_enum)
+                        if hasattr(plc_driver, "read_coil"):
+                            val = plc_driver.read_coil(address=addr)
+                        else:
+                            val_data = plc_driver.read_data(address=addr, count=1)
+                            val = bool(val_data[0]) if val_data else False
+                        data["coil_states"][coil_enum] = val
+
+                # 3. Poll Energy Meter
+                meter_driver = self.device_manager.drivers.get("EnergyMeter1")
+                meter_connected = meter_driver and meter_driver.is_connected
+                data["meter_connected"] = meter_connected
+                if meter_connected:
+                    data["meter_readings"] = meter_driver.read_data()
+
+                # 4. Poll MFM Meter 1
+                mfm1_driver = self.device_manager.drivers.get("MFMMeter1")
+                mfm1_connected = mfm1_driver and mfm1_driver.is_connected
+                data["mfm1_connected"] = mfm1_connected
+                if mfm1_connected:
+                    if hasattr(mfm1_driver, "read_float"):
+                        v = mfm1_driver.read_float(int(MFMRegister.VOLTAGE), function_code=4, swapped=True)
+                        i = mfm1_driver.read_float(int(MFMRegister.CURRENT), function_code=4, swapped=True)
+                        pf = mfm1_driver.read_float(int(MFMRegister.PF), function_code=4, swapped=True)
+                    else:
+                        v_data = mfm1_driver.read_data(address=int(MFMRegister.VOLTAGE), count=1)
+                        i_data = mfm1_driver.read_data(address=int(MFMRegister.CURRENT), count=1)
+                        pf_data = mfm1_driver.read_data(address=int(MFMRegister.PF), count=1)
+                        v = v_data[0] if v_data else 0.0
+                        i = i_data[0] if i_data else 0.0
+                        pf = pf_data[0] if pf_data else 1.0
+                    data["mfm1_readings"] = (v, i, pf)
+
+                # 5. Poll MFM Meter 2
+                mfm2_driver = self.device_manager.drivers.get("MFMMeter2")
+                mfm2_connected = mfm2_driver and mfm2_driver.is_connected
+                data["mfm2_connected"] = mfm2_connected
+                if mfm2_connected:
+                    if hasattr(mfm2_driver, "read_float"):
+                        v = mfm2_driver.read_float(int(MFMRegister.VOLTAGE), function_code=4, swapped=True)
+                        i = mfm2_driver.read_float(int(MFMRegister.CURRENT), function_code=4, swapped=True)
+                        pf = mfm2_driver.read_float(int(MFMRegister.PF), function_code=4, swapped=True)
+                    else:
+                        v_data = mfm2_driver.read_data(address=int(MFMRegister.VOLTAGE), count=1)
+                        i_data = mfm2_driver.read_data(address=int(MFMRegister.CURRENT), count=1)
+                        pf_data = mfm2_driver.read_data(address=int(MFMRegister.PF), count=1)
+                        v = v_data[0] if v_data else 0.0
+                        i = i_data[0] if i_data else 0.0
+                        pf = pf_data[0] if pf_data else 1.0
+                    data["mfm2_readings"] = (v, i, pf)
+
+                # 6. Poll PicoScope
+                pico_driver = self.device_manager.drivers.get("PicoScope1")
+                data["pico_connected"] = pico_driver and pico_driver.is_connected
+
+                self.data_polled.emit(data)
+            except Exception:
+                pass
+
+            # Sleep 1s in 100ms intervals
+            for _ in range(10):
+                time.sleep(0.1)
+                with self._lock:
+                    if not self._is_running:
+                        break
 
 class DebugPage(QWidget, Ui_DebugPage):
     def __init__(self, device_manager, main_window):
@@ -13,6 +121,7 @@ class DebugPage(QWidget, Ui_DebugPage):
         self.main_window = main_window
         self.is_active = False
         self.coil_states = {}
+        self.worker = None
         
         # Initialize default state for all coils
         for coil in PLCCoil:
@@ -20,20 +129,19 @@ class DebugPage(QWidget, Ui_DebugPage):
             
         # Build the custom interactive layout programmatically
         self.build_custom_ui()
-        
-        # Setup polling QTimer (1000ms interval)
-        self.timer = QTimer(self)
-        self.timer.setInterval(1000)
-        self.timer.timeout.connect(self.poll_hardware)
 
     def set_active(self, active: bool):
         """Called by MainWindow when switching between dashboard tabs."""
         self.is_active = active
         if active:
-            self.timer.start()
-            self.poll_hardware()  # Force instant update
+            self.worker = DebugPollWorker(self.device_manager, self)
+            self.worker.data_polled.connect(self.handle_poll_results)
+            self.worker.start()
         else:
-            self.timer.stop()
+            if self.worker:
+                self.worker.stop()
+                self.worker.wait()
+                self.worker = None
 
     def build_custom_ui(self):
         # Hide standard "Coming Soon" label
@@ -57,7 +165,8 @@ class DebugPage(QWidget, Ui_DebugPage):
         self.create_lock_indicator()
         self.create_plc_card()
         self.create_energy_meter_card()
-        self.create_mfm_card()
+        self.create_mfm1_card()
+        self.create_mfm2_card()
         self.create_picoscope_card()
         
         self.scroll_area.setWidget(self.scroll_content)
@@ -283,75 +392,142 @@ class DebugPage(QWidget, Ui_DebugPage):
         layout.addWidget(self.dlms_box)
         self.scroll_layout.addWidget(card)
 
-    def create_mfm_card(self):
-        card, layout, header, self.lbl_mfm_led, self.lbl_mfm_status, self.btn_mfm_connect = self.create_card_frame("3. MFM METER")
-        self.btn_mfm_connect.clicked.connect(lambda: self.toggle_device_connection("MFMMeter1"))
+    def create_mfm1_card(self):
+        card, layout, header, self.lbl_mfm1_led, self.lbl_mfm1_status, self.btn_mfm1_connect = self.create_card_frame("3. MFM METER 1")
+        self.btn_mfm1_connect.clicked.connect(lambda: self.toggle_device_connection("MFMMeter1"))
         
         # Instantaneous readings
-        self.mfm_readings_box = QGroupBox("Instantaneous Readings")
-        readings_layout = QGridLayout(self.mfm_readings_box)
+        self.mfm1_readings_box = QGroupBox("Instantaneous Readings")
+        readings_layout = QGridLayout(self.mfm1_readings_box)
         readings_layout.setSpacing(15)
         
         lbl_v = QLabel(f"Voltage (Reg {int(MFMRegister.VOLTAGE)}):")
-        self.lbl_mfm_val_v = QLabel("--- V")
-        self.lbl_mfm_val_v.setStyleSheet("font-weight: bold; color: #38BDF8; font-size: 16px;")
+        self.lbl_mfm1_val_v = QLabel("--- V")
+        self.lbl_mfm1_val_v.setStyleSheet("font-weight: bold; color: #38BDF8; font-size: 16px;")
         
         lbl_i = QLabel(f"Current (Reg {int(MFMRegister.CURRENT)}):")
-        self.lbl_mfm_val_i = QLabel("--- A")
-        self.lbl_mfm_val_i.setStyleSheet("font-weight: bold; color: #38BDF8; font-size: 16px;")
+        self.lbl_mfm1_val_i = QLabel("--- A")
+        self.lbl_mfm1_val_i.setStyleSheet("font-weight: bold; color: #38BDF8; font-size: 16px;")
         
-        lbl_w = QLabel(f"Active Power (Calc via PF Reg {int(MFMRegister.PF)}):")
-        self.lbl_mfm_val_w = QLabel("--- W")
-        self.lbl_mfm_val_w.setStyleSheet("font-weight: bold; color: #38BDF8; font-size: 16px;")
+        lbl_pf = QLabel(f"Power Factor (Reg {int(MFMRegister.PF)}):")
+        self.lbl_mfm1_val_pf = QLabel("---")
+        self.lbl_mfm1_val_pf.setStyleSheet("font-weight: bold; color: #38BDF8; font-size: 16px;")
         
         readings_layout.addWidget(lbl_v, 0, 0)
-        readings_layout.addWidget(self.lbl_mfm_val_v, 0, 1)
+        readings_layout.addWidget(self.lbl_mfm1_val_v, 0, 1)
         readings_layout.addWidget(lbl_i, 0, 2)
-        readings_layout.addWidget(self.lbl_mfm_val_i, 0, 3)
-        readings_layout.addWidget(lbl_w, 0, 4)
-        readings_layout.addWidget(self.lbl_mfm_val_w, 0, 5)
+        readings_layout.addWidget(self.lbl_mfm1_val_i, 0, 3)
+        readings_layout.addWidget(lbl_pf, 0, 4)
+        readings_layout.addWidget(self.lbl_mfm1_val_pf, 0, 5)
         
-        layout.addWidget(self.mfm_readings_box)
+        layout.addWidget(self.mfm1_readings_box)
         
         # Modbus registers utility
-        self.mfm_utility_box = QGroupBox("Modbus Register Utility")
-        modbus_layout = QVBoxLayout(self.mfm_utility_box)
+        self.mfm1_utility_box = QGroupBox("Modbus Register Utility")
+        modbus_layout = QVBoxLayout(self.mfm1_utility_box)
         
         input_layout = QHBoxLayout()
-        self.le_mfm_reg_addr = QLineEdit()
-        self.le_mfm_reg_addr.setPlaceholderText("Address (e.g. 256 or 0x0100)")
+        self.le_mfm1_reg_addr = QLineEdit()
+        self.le_mfm1_reg_addr.setPlaceholderText("Address (e.g. 256 or 0x0100)")
         
-        self.le_mfm_reg_count = QLineEdit()
-        self.le_mfm_reg_count.setPlaceholderText("Count (default 1)")
+        self.le_mfm1_reg_count = QLineEdit()
+        self.le_mfm1_reg_count.setPlaceholderText("Count (default 1)")
         
-        self.le_mfm_reg_val = QLineEdit()
-        self.le_mfm_reg_val.setPlaceholderText("Write Value")
+        self.le_mfm1_reg_val = QLineEdit()
+        self.le_mfm1_reg_val.setPlaceholderText("Write Value")
         
         btn_reg_read = QPushButton("Read Register")
-        btn_reg_read.clicked.connect(self.read_mfm_registers)
+        btn_reg_read.clicked.connect(lambda: self.read_mfm_registers_specific("MFMMeter1"))
         
         btn_reg_write = QPushButton("Write Register")
-        btn_reg_write.clicked.connect(self.write_mfm_registers)
+        btn_reg_write.clicked.connect(lambda: self.write_mfm_registers_specific("MFMMeter1"))
         
         self.style_action_buttons(btn_reg_read, btn_reg_write)
         
-        input_layout.addWidget(self.le_mfm_reg_addr)
-        input_layout.addWidget(self.le_mfm_reg_count)
-        input_layout.addWidget(self.le_mfm_reg_val)
+        input_layout.addWidget(self.le_mfm1_reg_addr)
+        input_layout.addWidget(self.le_mfm1_reg_count)
+        input_layout.addWidget(self.le_mfm1_reg_val)
         input_layout.addWidget(btn_reg_read)
         input_layout.addWidget(btn_reg_write)
         modbus_layout.addLayout(input_layout)
         
-        self.txt_mfm_console = QTextEdit()
-        self.txt_mfm_console.setReadOnly(True)
-        self.txt_mfm_console.setMaximumHeight(100)
+        self.txt_mfm1_console = QTextEdit()
+        self.txt_mfm1_console.setReadOnly(True)
+        self.txt_mfm1_console.setMaximumHeight(100)
         
-        modbus_layout.addWidget(self.txt_mfm_console)
-        layout.addWidget(self.mfm_utility_box)
+        modbus_layout.addWidget(self.txt_mfm1_console)
+        layout.addWidget(self.mfm1_utility_box)
+        self.scroll_layout.addWidget(card)
+
+    def create_mfm2_card(self):
+        card, layout, header, self.lbl_mfm2_led, self.lbl_mfm2_status, self.btn_mfm2_connect = self.create_card_frame("4. MFM METER 2")
+        self.btn_mfm2_connect.clicked.connect(lambda: self.toggle_device_connection("MFMMeter2"))
+        
+        # Instantaneous readings
+        self.mfm2_readings_box = QGroupBox("Instantaneous Readings")
+        readings_layout = QGridLayout(self.mfm2_readings_box)
+        readings_layout.setSpacing(15)
+        
+        lbl_v = QLabel(f"Voltage (Reg {int(MFMRegister.VOLTAGE)}):")
+        self.lbl_mfm2_val_v = QLabel("--- V")
+        self.lbl_mfm2_val_v.setStyleSheet("font-weight: bold; color: #38BDF8; font-size: 16px;")
+        
+        lbl_i = QLabel(f"Current (Reg {int(MFMRegister.CURRENT)}):")
+        self.lbl_mfm2_val_i = QLabel("--- A")
+        self.lbl_mfm2_val_i.setStyleSheet("font-weight: bold; color: #38BDF8; font-size: 16px;")
+        
+        lbl_pf = QLabel(f"Power Factor (Reg {int(MFMRegister.PF)}):")
+        self.lbl_mfm2_val_pf = QLabel("---")
+        self.lbl_mfm2_val_pf.setStyleSheet("font-weight: bold; color: #38BDF8; font-size: 16px;")
+        
+        readings_layout.addWidget(lbl_v, 0, 0)
+        readings_layout.addWidget(self.lbl_mfm2_val_v, 0, 1)
+        readings_layout.addWidget(lbl_i, 0, 2)
+        readings_layout.addWidget(self.lbl_mfm2_val_i, 0, 3)
+        readings_layout.addWidget(lbl_pf, 0, 4)
+        readings_layout.addWidget(self.lbl_mfm2_val_pf, 0, 5)
+        
+        layout.addWidget(self.mfm2_readings_box)
+        
+        # Modbus registers utility
+        self.mfm2_utility_box = QGroupBox("Modbus Register Utility")
+        modbus_layout = QVBoxLayout(self.mfm2_utility_box)
+        
+        input_layout = QHBoxLayout()
+        self.le_mfm2_reg_addr = QLineEdit()
+        self.le_mfm2_reg_addr.setPlaceholderText("Address (e.g. 256 or 0x0100)")
+        
+        self.le_mfm2_reg_count = QLineEdit()
+        self.le_mfm2_reg_count.setPlaceholderText("Count (default 1)")
+        
+        self.le_mfm2_reg_val = QLineEdit()
+        self.le_mfm2_reg_val.setPlaceholderText("Write Value")
+        
+        btn_reg_read = QPushButton("Read Register")
+        btn_reg_read.clicked.connect(lambda: self.read_mfm_registers_specific("MFMMeter2"))
+        
+        btn_reg_write = QPushButton("Write Register")
+        btn_reg_write.clicked.connect(lambda: self.write_mfm_registers_specific("MFMMeter2"))
+        
+        self.style_action_buttons(btn_reg_read, btn_reg_write)
+        
+        input_layout.addWidget(self.le_mfm2_reg_addr)
+        input_layout.addWidget(self.le_mfm2_reg_count)
+        input_layout.addWidget(self.le_mfm2_reg_val)
+        input_layout.addWidget(btn_reg_read)
+        input_layout.addWidget(btn_reg_write)
+        modbus_layout.addLayout(input_layout)
+        
+        self.txt_mfm2_console = QTextEdit()
+        self.txt_mfm2_console.setReadOnly(True)
+        self.txt_mfm2_console.setMaximumHeight(100)
+        
+        modbus_layout.addWidget(self.txt_mfm2_console)
+        layout.addWidget(self.mfm2_utility_box)
         self.scroll_layout.addWidget(card)
 
     def create_picoscope_card(self):
-        card, layout, header, self.lbl_picoscope_led, self.lbl_picoscope_status, self.btn_picoscope_connect = self.create_card_frame("4. PICOSCOPE OSCILLOSCOPE")
+        card, layout, header, self.lbl_picoscope_led, self.lbl_picoscope_status, self.btn_picoscope_connect = self.create_card_frame("5. PICOSCOPE OSCILLOSCOPE")
         self.btn_picoscope_connect.clicked.connect(lambda: self.toggle_device_connection("PicoScope1"))
         
         # PicoScope Utility
@@ -548,13 +724,19 @@ class DebugPage(QWidget, Ui_DebugPage):
         # 1. Update general card styled buttons
         self.btn_plc_connect.setStyleSheet(self.get_connect_button_style())
         self.btn_meter_connect.setStyleSheet(self.get_connect_button_style())
-        self.btn_mfm_connect.setStyleSheet(self.get_connect_button_style())
+        if hasattr(self, 'btn_mfm1_connect'):
+            self.btn_mfm1_connect.setStyleSheet(self.get_connect_button_style())
+        if hasattr(self, 'btn_mfm2_connect'):
+            self.btn_mfm2_connect.setStyleSheet(self.get_connect_button_style())
         if hasattr(self, 'btn_picoscope_connect'):
             self.btn_picoscope_connect.setStyleSheet(self.get_connect_button_style())
         
         # 2. Update consoles
         self.txt_meter_console.setStyleSheet(self.get_console_style())
-        self.txt_mfm_console.setStyleSheet(self.get_console_style())
+        if hasattr(self, 'txt_mfm1_console'):
+            self.txt_mfm1_console.setStyleSheet(self.get_console_style())
+        if hasattr(self, 'txt_mfm2_console'):
+            self.txt_mfm2_console.setStyleSheet(self.get_console_style())
         if hasattr(self, 'txt_picoscope_console'):
             self.txt_picoscope_console.setStyleSheet(self.get_console_style())
         
@@ -569,8 +751,13 @@ class DebugPage(QWidget, Ui_DebugPage):
         meter_driver = self.device_manager.drivers.get("EnergyMeter1")
         self.update_connection_led(self.lbl_meter_led, self.lbl_meter_status, meter_driver and meter_driver.is_connected)
         
-        mfm_driver = self.device_manager.drivers.get("MFMMeter1")
-        self.update_connection_led(self.lbl_mfm_led, self.lbl_mfm_status, mfm_driver and mfm_driver.is_connected)
+        if hasattr(self, 'lbl_mfm1_led'):
+            mfm1_driver = self.device_manager.drivers.get("MFMMeter1")
+            self.update_connection_led(self.lbl_mfm1_led, self.lbl_mfm1_status, mfm1_driver and mfm1_driver.is_connected)
+            
+        if hasattr(self, 'lbl_mfm2_led'):
+            mfm2_driver = self.device_manager.drivers.get("MFMMeter2")
+            self.update_connection_led(self.lbl_mfm2_led, self.lbl_mfm2_status, mfm2_driver and mfm2_driver.is_connected)
         
         if hasattr(self, 'lbl_picoscope_led'):
             picoscope_driver = self.device_manager.drivers.get("PicoScope1")
@@ -734,138 +921,119 @@ class DebugPage(QWidget, Ui_DebugPage):
         except Exception as e:
             self.txt_meter_console.append(f"<< Error: {e}")
 
-    def read_mfm_registers(self):
-        mfm_driver = self.device_manager.drivers.get("MFMMeter1")
+    def read_mfm_registers_specific(self, device_name: str):
+        mfm_driver = self.device_manager.drivers.get(device_name)
+        suffix = "1" if device_name == "MFMMeter1" else "2"
+        console = getattr(self, f"txt_mfm{suffix}_console")
+        le_addr = getattr(self, f"le_mfm{suffix}_reg_addr")
+        le_count = getattr(self, f"le_mfm{suffix}_reg_count")
+        
         if not mfm_driver or not mfm_driver.is_connected:
-            self.txt_mfm_console.append("MFM is disconnected.")
+            console.append(f"{device_name} is disconnected.")
             return
         try:
-            addr_str = self.le_mfm_reg_addr.text().strip()
+            addr_str = le_addr.text().strip()
             if not addr_str: return
             addr = int(addr_str, 0)
-            count = int(self.le_mfm_reg_count.text().strip() or "1")
+            count = int(le_count.text().strip() or "1")
             
-            self.txt_mfm_console.append(f">> Read Reg: {addr} (count={count})")
+            console.append(f">> Read Reg: {addr} (count={count})")
             res = mfm_driver.read_data(address=addr, count=count)
-            self.txt_mfm_console.append(f"<< Value: {res}")
+            console.append(f"<< Value: {res}")
         except Exception as e:
-            self.txt_mfm_console.append(f"<< Error: {e}")
+            console.append(f"<< Error: {e}")
 
-    def write_mfm_registers(self):
-        mfm_driver = self.device_manager.drivers.get("MFMMeter1")
+    def write_mfm_registers_specific(self, device_name: str):
+        mfm_driver = self.device_manager.drivers.get(device_name)
+        suffix = "1" if device_name == "MFMMeter1" else "2"
+        console = getattr(self, f"txt_mfm{suffix}_console")
+        le_addr = getattr(self, f"le_mfm{suffix}_reg_addr")
+        le_val = getattr(self, f"le_mfm{suffix}_reg_val")
+        
         if not mfm_driver or not mfm_driver.is_connected:
-            self.txt_mfm_console.append("MFM is disconnected.")
+            console.append(f"{device_name} is disconnected.")
             return
         try:
-            addr_str = self.le_mfm_reg_addr.text().strip()
-            val_str = self.le_mfm_reg_val.text().strip()
+            addr_str = le_addr.text().strip()
+            val_str = le_val.text().strip()
             if not addr_str or not val_str: return
             addr = int(addr_str, 0)
             val = int(val_str, 0)
             
-            self.txt_mfm_console.append(f">> Write Reg: {addr} = {val}")
+            console.append(f">> Write Reg: {addr} = {val}")
             success = mfm_driver.write_data(address=addr, value=val)
-            self.txt_mfm_console.append(f"<< Write result: {'Success' if success else 'Failed'}")
+            console.append(f"<< Write result: {'Success' if success else 'Failed'}")
         except Exception as e:
-            self.txt_mfm_console.append(f"<< Error: {e}")
+            console.append(f"<< Error: {e}")
 
-    def poll_hardware(self):
-        """Timer callback that reads device and registers state periodically."""
+    @Slot(dict)
+    def handle_poll_results(self, data: dict):
         if not self.is_active:
             return
-            
-        # 1. Concurrency Check: Check if any test sequence is running
-        test_running = False
-        if hasattr(self.main_window, 'test_page') and self.main_window.test_page.test_runner:
-            test_running = self.main_window.test_page.test_runner.isRunning()
-            
+
+        test_running = data.get("test_running", False)
         self.lbl_lock_status.setVisible(test_running)
         
         # Disable/Enable debug controls depending on test_running
         self.plc_grid_box.setEnabled(not test_running)
-        self.plc_grid_box.setEnabled(not test_running)
         self.plc_gen_box.setEnabled(not test_running)
         self.dlms_box.setEnabled(not test_running)
-        self.mfm_utility_box.setEnabled(not test_running)
+        if hasattr(self, 'mfm1_utility_box'):
+            self.mfm1_utility_box.setEnabled(not test_running)
+        if hasattr(self, 'mfm2_utility_box'):
+            self.mfm2_utility_box.setEnabled(not test_running)
         if hasattr(self, 'picoscope_box'):
             self.picoscope_box.setEnabled(not test_running)
             self.btn_picoscope_connect.setEnabled(not test_running)
         self.btn_plc_connect.setEnabled(not test_running)
         self.btn_meter_connect.setEnabled(not test_running)
-        self.btn_mfm_connect.setEnabled(not test_running)
-        
-        # 2. Poll PLC Connection & Coils
-        plc_driver = self.device_manager.drivers.get("PLC1")
-        plc_connected = plc_driver and plc_driver.is_connected
-        self.update_connection_led(self.lbl_plc_led, self.lbl_plc_status, plc_connected)
-        
-        if plc_connected:
-            try:
-                for coil_enum in PLCCoil:
-                    addr = int(coil_enum)
-                    if hasattr(plc_driver, "read_coil"):
-                        val = plc_driver.read_coil(address=addr)
-                    else:
-                        # Coil addresses are mapped as holding registers in modbus driver
-                        data = plc_driver.read_data(address=addr, count=1)
-                        val = bool(data[0]) if data else False
-                    self.update_coil_led(coil_enum, val)
-            except Exception as e:
-                pass
+        if hasattr(self, 'btn_mfm1_connect'):
+            self.btn_mfm1_connect.setEnabled(not test_running)
+        if hasattr(self, 'btn_mfm2_connect'):
+            self.btn_mfm2_connect.setEnabled(not test_running)
+
+        # 2. Update PLC
+        self.update_connection_led(self.lbl_plc_led, self.lbl_plc_status, data.get("plc_connected", False))
+        for coil_enum, val in data.get("coil_states", {}).items():
+            self.update_coil_led(coil_enum, val)
+
+        # 3. Update Energy Meter
+        self.update_connection_led(self.lbl_meter_led, self.lbl_meter_status, data.get("meter_connected", False))
+        readings = data.get("meter_readings")
+        if readings is not None:
+            if isinstance(readings, dict):
+                v = readings.get("voltage", 0.0)
+                i = readings.get("current", 0.0)
+                pf = readings.get("power_factor", 1.0)
+                active_p = v * i * pf
                 
-        # 3. Poll Energy Meter
-        meter_driver = self.device_manager.drivers.get("EnergyMeter1")
-        meter_connected = meter_driver and meter_driver.is_connected
-        self.update_connection_led(self.lbl_meter_led, self.lbl_meter_status, meter_connected)
-        
-        if meter_connected:
-            try:
-                # read_data without parameters fetches voltage and current readings dictionary
-                readings = meter_driver.read_data()
-                if isinstance(readings, dict):
-                    v = readings.get("voltage", 0.0)
-                    i = readings.get("current", 0.0)
-                    pf = readings.get("power_factor", 1.0)
-                    active_p = v * i * pf
-                    
-                    self.lbl_meter_val_v.setText(f"{v:.1f} V")
-                    self.lbl_meter_val_i.setText(f"{i:.3f} A")
-                    self.lbl_meter_val_pf.setText(f"{pf:.2f}")
-                    self.lbl_meter_val_w.setText(f"{active_p:.1f} W")
-                elif isinstance(readings, (int, float)):
-                    self.lbl_meter_val_i.setText(f"{readings:.3f} A")
-            except Exception as e:
-                pass
-                
-        # 4. Poll MFM Meter
-        mfm_driver = self.device_manager.drivers.get("MFMMeter1")
-        mfm_connected = mfm_driver and mfm_driver.is_connected
-        self.update_connection_led(self.lbl_mfm_led, self.lbl_mfm_status, mfm_connected)
-        
-        if mfm_connected:
-            try:
-                if hasattr(mfm_driver, "read_float"):
-                    v = mfm_driver.read_float(int(MFMRegister.VOLTAGE), function_code=4, swapped=True)
-                    i = mfm_driver.read_float(int(MFMRegister.CURRENT), function_code=4, swapped=True)
-                    pf = mfm_driver.read_float(int(MFMRegister.PF), function_code=4, swapped=True)
-                    p = v * i * pf
-                else:
-                    v_data = mfm_driver.read_data(address=int(MFMRegister.VOLTAGE), count=1)
-                    i_data = mfm_driver.read_data(address=int(MFMRegister.CURRENT), count=1)
-                    pf_data = mfm_driver.read_data(address=int(MFMRegister.PF), count=1)
-                    v = v_data[0] if v_data else 0.0
-                    i = i_data[0] if i_data else 0.0
-                    pf = pf_data[0] if pf_data else 1.0
-                    p = v * i * pf
-                    
-                self.lbl_mfm_val_v.setText(f"{v:.1f} V")
-                self.lbl_mfm_val_i.setText(f"{i:.3f} A")
-                self.lbl_mfm_val_w.setText(f"{p:.1f} W")
-            except Exception as e:
-                pass
-                
-        # 5. Poll PicoScope
+                self.lbl_meter_val_v.setText(f"{v:.1f} V")
+                self.lbl_meter_val_i.setText(f"{i:.3f} A")
+                self.lbl_meter_val_pf.setText(f"{pf:.2f}")
+                self.lbl_meter_val_w.setText(f"{active_p:.1f} W")
+            elif isinstance(readings, (int, float)):
+                self.lbl_meter_val_i.setText(f"{readings:.3f} A")
+
+        # 4. Update MFM Meter 1
+        if hasattr(self, 'lbl_mfm1_led'):
+            self.update_connection_led(self.lbl_mfm1_led, self.lbl_mfm1_status, data.get("mfm1_connected", False))
+        m1_vals = data.get("mfm1_readings")
+        if m1_vals is not None:
+            v, i, pf = m1_vals
+            self.lbl_mfm1_val_v.setText(f"{v:.1f} V")
+            self.lbl_mfm1_val_i.setText(f"{i:.3f} A")
+            self.lbl_mfm1_val_pf.setText(f"{pf:.2f}")
+
+        # 5. Update MFM Meter 2
+        if hasattr(self, 'lbl_mfm2_led'):
+            self.update_connection_led(self.lbl_mfm2_led, self.lbl_mfm2_status, data.get("mfm2_connected", False))
+        m2_vals = data.get("mfm2_readings")
+        if m2_vals is not None:
+            v, i, pf = m2_vals
+            self.lbl_mfm2_val_v.setText(f"{v:.1f} V")
+            self.lbl_mfm2_val_i.setText(f"{i:.3f} A")
+            self.lbl_mfm2_val_pf.setText(f"{pf:.2f}")
+
+        # 6. Update PicoScope
         if hasattr(self, 'lbl_picoscope_led'):
-            pico_driver = self.device_manager.drivers.get("PicoScope1")
-            pico_connected = pico_driver and pico_driver.is_connected
-            self.update_connection_led(self.lbl_picoscope_led, self.lbl_picoscope_status, pico_connected)
+            self.update_connection_led(self.lbl_picoscope_led, self.lbl_picoscope_status, data.get("pico_connected", False))

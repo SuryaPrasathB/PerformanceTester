@@ -17,6 +17,7 @@ class TestContext:
         # Phase 3 Hardware Integration
         from services.hardware_service import HardwareService
         self.hardware_service = HardwareService(self.device_manager, self.device_manager.config_service)
+        self.hardware_service.context = self
         self.hardware_service.initialize_all()
         
         self.safety_manager = self.hardware_service.safety_manager
