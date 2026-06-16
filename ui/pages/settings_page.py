@@ -153,11 +153,12 @@ class SettingsPage(QWidget, Ui_SettingsPage):
                 btn.setText("Failed")
                 return
             
-            from core.hardware_mapping import MFMRegister
+            from core.hardware_mapping import MFMRegister, MFM_FUNCTION_CODE, MFM_REGISTER_TYPES
             try:
                 # Use read_float helper if available
                 if hasattr(driver, "read_float"):
-                    voltage = driver.read_float(address=int(MFMRegister.VOLTAGE), function_code=4, swapped=True)
+                    swap_v = (MFM_REGISTER_TYPES.get("VOLTAGE", "SWAPPED_FLOAT") == "SWAPPED_FLOAT")
+                    voltage = driver.read_float(address=int(MFMRegister.VOLTAGE), function_code=MFM_FUNCTION_CODE, swapped=swap_v)
                     btn.setStyleSheet("background-color: #22C55E; color: white; font-weight: bold;")
                     btn.setText(f"V: {voltage:.1f}")
                 else:

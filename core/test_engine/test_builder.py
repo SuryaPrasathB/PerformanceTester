@@ -146,15 +146,47 @@ class TestBuilder:
             
         return self
 
-    def start_power_sequence(self):
+    def verify_plc_coil_status(self, status_coil: PLCCoil, name_for_error: str):
+        def action(ctx, hw):
+            ctx.update_status(f"Verifying status of {name_for_error}...")
+            try:
+                if hasattr(hw, "plc") and hw.plc:
+                    # Toggle INPUT_STATUS_REQUEST to True
+                    hw.plc.write_coil(PLCCoil.INPUT_STATUS_REQUEST.value, True)
+                    time.sleep(0.1)
+                    # Read target status coil
+                    status = hw.plc.read_coil(status_coil.value)
+                    # Reset INPUT_STATUS_REQUEST to False
+                    hw.plc.write_coil(PLCCoil.INPUT_STATUS_REQUEST.value, False)
+                    
+                    ctx.logger.info(f"PLC Status Verification: {name_for_error} status is {status}")
+                    if not status:
+                        raise Exception(f"PLC Verification Failed: {name_for_error} did not turn ON!")
+                else:
+                    ctx.logger.info(f"MOCK: PLC Verification passed for {name_for_error}")
+            except Exception as e:
+                ctx.logger.error(f"Error during status verification of {name_for_error}: {e}")
+                raise Exception(f"Verification Failed: {name_for_error} failed status check: {e}")
+        self.add_step(f"Verify {name_for_error} Status", action, device="PLC")
+        return self
+
+    def start_power_sequence(self, contactor_coil: PLCCoil = PLCCoil.CONTACTOR_120A_LOAD_BANK_COIL_ADDR):
         self.set_plc_coil(PLCCoil.ACB_COIL_ADDR, True)
+        self.verify_plc_coil_status(PLCCoil.ACB_STATUS, "ACB")
+        self.set_plc_coil(contactor_coil, True)
+        if contactor_coil == PLCCoil.CONTACTOR_120A_LOAD_BANK_COIL_ADDR:
+            self.verify_plc_coil_status(PLCCoil.CONTACTOR_120A_STATUS, "120A Contactor")
+        else:
+            self.verify_plc_coil_status(PLCCoil.CONTACTOR_100mA_STATUS, "100mA Contactor")
         self.set_plc_coil(PLCCoil.SCR_COIL_ADDR, True)
         return self
 
-    def stop_power_sequence(self):
-        self.set_plc_coil(PLCCoil.ACB_COIL_ADDR, False)
+    def stop_power_sequence(self, contactor_coil: PLCCoil = PLCCoil.CONTACTOR_120A_LOAD_BANK_COIL_ADDR):
         self.set_plc_coil(PLCCoil.SCR_COIL_ADDR, False)
+        self.set_plc_coil(contactor_coil, False)
+        self.set_plc_coil(PLCCoil.ACB_COIL_ADDR, False)
         return self
+
         
     def start_background_monitor(self, name: str, monitor_func: Callable):
         def action(ctx, hw):

@@ -178,7 +178,7 @@ class TestRunner(QThread):
                 self.on_data_update.emit(current_data)
             except Exception:
                 pass
-            time.sleep(0.5)
+            time.sleep(1.0)
 
     def pause(self):
         """Pauses test execution."""

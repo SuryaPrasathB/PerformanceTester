@@ -15,7 +15,7 @@ class G5FaultCurrentMakingTest(BaseTest):
         # 2. Turn ON ACB (PLC Coil ACB_COIL_ADDR = 0x03).
         # 3. Delay as required.
         # 4. Turn ON SCR (PLC Coil SCR_COIL_ADDR = 0x04).
-        builder.start_power_sequence()
+        builder.start_power_sequence(PLCCoil.CONTACTOR_120A_LOAD_BANK_COIL_ADDR)
         
         # 5. Read meter serial number.
         builder.send_meter_command("read_serial_number")
@@ -44,7 +44,7 @@ class G5FaultCurrentMakingTest(BaseTest):
             
             # 14. Turn OFF ACB.
             # 15. Turn OFF SCR.
-            b.stop_power_sequence()
+            b.stop_power_sequence(PLCCoil.CONTACTOR_120A_LOAD_BANK_COIL_ADDR)
             
             # 16. Prompt user to select meter category (U2 or U3) using two selection buttons.
             b.prompt_user("Select meter category (U2 or U3)", requires_input=True, save_as="meter_category")
@@ -62,7 +62,7 @@ class G5FaultCurrentMakingTest(BaseTest):
             # 19. Turn ON ACB (PLC Coil ACB_COIL_ADDR = 0x03).
             # 20. Delay as required.
             # 21. Turn ON SCR (PLC Coil SCR_COIL_ADDR = 0x04).
-            b.start_power_sequence()
+            b.start_power_sequence(PLCCoil.CONTACTOR_120A_LOAD_BANK_COIL_ADDR)
             
             # 22. Notify PLC that the test is starting (FCMC_TEST_START = 0x00).
             b.set_plc_coil(PLCCoil.FCMC_TEST_START, True)
@@ -82,10 +82,10 @@ class G5FaultCurrentMakingTest(BaseTest):
             
             # 26. Delay 1 minute.
             b.wait(60)
-
+ 
         # Repeat steps 7-26 for 3 times in total.
         builder.loop(3, g5_loop)
-
+ 
         # 27. Close Meter Load Switch
         builder.send_meter_command("close_load_switch")
         # 28. Measure Current should be > 0
@@ -106,7 +106,7 @@ class G5FaultCurrentMakingTest(BaseTest):
         
         # 34. Turn OFF ACB
         # 35. Turn OFF SCR
-        builder.stop_power_sequence()
+        builder.stop_power_sequence(PLCCoil.CONTACTOR_120A_LOAD_BANK_COIL_ADDR)
         
     def _verify_and_store(self, ctx, hw):
         try:

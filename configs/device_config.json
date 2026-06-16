@@ -3,7 +3,7 @@
     {
       "name": "PLC1",
       "type": "modbus",
-      "ip": "192.168.0.118",
+      "ip": "192.168.0.123",
       "port": "502",
       "mock": false
     },
@@ -17,16 +17,22 @@
     {
       "name": "MFMMeter1",
       "type": "modbus",
-      "port": "COM1",
+      "port": "COM6",
       "baudrate": 9600,
+      "bytesize": 8,
+      "parity": "NONE",
+      "stopbits": 1,
       "slave_id": 1,
       "mock": false
     },
     {
       "name": "MFMMeter2",
       "type": "modbus",
-      "port": "COM1",
+      "port": "COM6",
       "baudrate": 9600,
+      "bytesize": 8,
+      "parity": "NONE",
+      "stopbits": 1,
       "slave_id": 2,
       "mock": false
     }

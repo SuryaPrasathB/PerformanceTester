@@ -101,9 +101,13 @@ class TestDualMFM(unittest.TestCase):
         self.assertEqual(telemetry["current"], 123.4)
         self.assertEqual(telemetry["power_factor"], 123.4)
         
-        hw.mfm_drv.read_float.assert_any_call(40001, function_code=4, swapped=True)
-        hw.mfm_drv.read_float.assert_any_call(40003, function_code=4, swapped=True)
-        hw.mfm_drv.read_float.assert_any_call(40005, function_code=4, swapped=True)
+        from core.hardware_mapping import MFM_FUNCTION_CODE, MFM_REGISTER_TYPES
+        swap_v = (MFM_REGISTER_TYPES.get("VOLTAGE", "SWAPPED_FLOAT") == "SWAPPED_FLOAT")
+        swap_i = (MFM_REGISTER_TYPES.get("CURRENT", "SWAPPED_FLOAT") == "SWAPPED_FLOAT")
+        swap_pf = (MFM_REGISTER_TYPES.get("PF", "SWAPPED_FLOAT") == "SWAPPED_FLOAT")
+        hw.mfm_drv.read_float.assert_any_call(40001, function_code=MFM_FUNCTION_CODE, swapped=swap_v)
+        hw.mfm_drv.read_float.assert_any_call(40003, function_code=MFM_FUNCTION_CODE, swapped=swap_i)
+        hw.mfm_drv.read_float.assert_any_call(40005, function_code=MFM_FUNCTION_CODE, swapped=swap_pf)
         hw.mfm2_drv.read_float.assert_not_called()
         
         # Cleanup
@@ -133,9 +137,13 @@ class TestDualMFM(unittest.TestCase):
         self.assertEqual(telemetry["current"], 0.045)
         self.assertEqual(telemetry["power_factor"], 0.95)
         
-        hw.mfm_drv.read_float.assert_any_call(40001, function_code=4, swapped=True)
-        hw.mfm_drv.read_float.assert_any_call(40005, function_code=4, swapped=True)
-        hw.mfm2_drv.read_float.assert_called_with(40003, function_code=4, swapped=True)
+        from core.hardware_mapping import MFM_FUNCTION_CODE, MFM_REGISTER_TYPES
+        swap_v = (MFM_REGISTER_TYPES.get("VOLTAGE", "SWAPPED_FLOAT") == "SWAPPED_FLOAT")
+        swap_i = (MFM_REGISTER_TYPES.get("CURRENT", "SWAPPED_FLOAT") == "SWAPPED_FLOAT")
+        swap_pf = (MFM_REGISTER_TYPES.get("PF", "SWAPPED_FLOAT") == "SWAPPED_FLOAT")
+        hw.mfm_drv.read_float.assert_any_call(40001, function_code=MFM_FUNCTION_CODE, swapped=swap_v)
+        hw.mfm_drv.read_float.assert_any_call(40005, function_code=MFM_FUNCTION_CODE, swapped=swap_pf)
+        hw.mfm2_drv.read_float.assert_called_with(40003, function_code=MFM_FUNCTION_CODE, swapped=swap_i)
         
         # Cleanup
         dm.cleanup()

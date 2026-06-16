@@ -17,8 +17,8 @@ class G2NormalOperationTest(BaseTest):
         # 1. Prompt User to Set Load to 240V Ic UPF
         builder.prompt_user("Set Load to 240V Ic UPF", requires_input=False)
         
-        # 2-4. Turn ON ACB -> Delay -> Turn ON SCR
-        builder.start_power_sequence()
+        # 2-4. Turn ON ACB -> Delay -> Turn ON Contactor -> Turn ON SCR
+        builder.start_power_sequence(PLCCoil.CONTACTOR_120A_LOAD_BANK_COIL_ADDR)
         
         # 5. Read Meter Serial Number
         builder.send_meter_command("read_serial_number")
@@ -48,8 +48,8 @@ class G2NormalOperationTest(BaseTest):
         # 12. Show pass fail status & 13. Store Results
         builder.custom_action("Verify Energy Difference & Store Results", self._verify_and_store)
         
-        # 14-15. Turn OFF ACB and SCR
-        builder.stop_power_sequence()
+        # 14-15. Turn OFF ACB, SCR and Contactor
+        builder.stop_power_sequence(PLCCoil.CONTACTOR_120A_LOAD_BANK_COIL_ADDR)
 
     def _verify_and_store(self, ctx, hw):
         try:

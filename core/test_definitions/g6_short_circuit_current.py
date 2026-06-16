@@ -15,7 +15,7 @@ class G6ShortCircuitCurrentTest(BaseTest):
         # 2. Turn ON ACB (PLC Coil ACB_COIL_ADDR = 0x03).
         # 3. Delay as required.
         # 4. Turn ON SCR (PLC Coil SCR_COIL_ADDR = 0x04).
-        builder.start_power_sequence()
+        builder.start_power_sequence(PLCCoil.CONTACTOR_120A_LOAD_BANK_COIL_ADDR)
         
         # 5. Read meter serial number.
         builder.send_meter_command("read_serial_number")
@@ -45,7 +45,7 @@ class G6ShortCircuitCurrentTest(BaseTest):
         
         # 14. Turn OFF ACB.
         # 15. Turn OFF SCR.
-        builder.stop_power_sequence()
+        builder.stop_power_sequence(PLCCoil.CONTACTOR_120A_LOAD_BANK_COIL_ADDR)
         
         # --- First Short Circuit Current Carrying Capacity Test ---
         # 16. Prompt user to select meter category (U2 or U3)
@@ -59,6 +59,9 @@ class G6ShortCircuitCurrentTest(BaseTest):
             else:
                 ctx.prompt_user_action("Set load to Vc, 4.5 kA, 0.8 PF", False)
         builder.custom_action("Prompt for Load Configuration (Test 1)", prompt_load_test_1)
+        
+        # Start Power Sequence for Test 1 (ACB -> Delay -> 120A Contactor -> SCR)
+        builder.start_power_sequence(PLCCoil.CONTACTOR_120A_LOAD_BANK_COIL_ADDR)
         
         # Repeat 3 times (First SC test)
         def short_circuit_loop_1(b, i):
@@ -98,6 +101,9 @@ class G6ShortCircuitCurrentTest(BaseTest):
         # 29. Validate results.
         builder.custom_action("Validate Post-Test 1 Results", lambda ctx, hw: ctx.logger.info("Post-Test 1 Validated."))
         
+        # Turn OFF outputs before inserting new sample
+        builder.stop_power_sequence(PLCCoil.CONTACTOR_120A_LOAD_BANK_COIL_ADDR)
+        
         # --- Second Short Circuit Current Carrying Capacity Test (New Sample) ---
         # 30. Prompt user to use a new sample.
         builder.prompt_user("Insert a new sample", requires_input=False)
@@ -113,6 +119,9 @@ class G6ShortCircuitCurrentTest(BaseTest):
             else:
                 ctx.prompt_user_action("Set load to Vc, 2.5 kA, 0.8 PF", False)
         builder.custom_action("Prompt for Load Configuration (Test 2)", prompt_load_test_2)
+        
+        # Start Power Sequence for Test 2 (ACB -> Delay -> 120A Contactor -> SCR)
+        builder.start_power_sequence(PLCCoil.CONTACTOR_120A_LOAD_BANK_COIL_ADDR)
         
         # Repeat 3 times (Second SC test)
         def short_circuit_loop_2(b, i):
@@ -152,7 +161,7 @@ class G6ShortCircuitCurrentTest(BaseTest):
         
         # 43. Turn OFF ACB.
         # 44. Turn OFF SCR.
-        builder.stop_power_sequence()
+        builder.stop_power_sequence(PLCCoil.CONTACTOR_120A_LOAD_BANK_COIL_ADDR)
         
     def _verify_and_store(self, ctx, hw):
         try:

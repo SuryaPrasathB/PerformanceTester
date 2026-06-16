@@ -239,14 +239,51 @@ class HardwareService(QObject):
         if not drv_v_pf or not drv_v_pf.is_connected:
             return {}
         try:
-            from core.hardware_mapping import MFMRegister
+            from core.hardware_mapping import MFMRegister, MFM_FUNCTION_CODE, MFM_REGISTER_TYPES
             
-            # Read voltage and PF from drv_v_pf
+            swap_v = (MFM_REGISTER_TYPES.get("VOLTAGE", "SWAPPED_FLOAT") == "SWAPPED_FLOAT")
+            swap_i = (MFM_REGISTER_TYPES.get("CURRENT", "SWAPPED_FLOAT") == "SWAPPED_FLOAT")
+            swap_pf = (MFM_REGISTER_TYPES.get("PF", "SWAPPED_FLOAT") == "SWAPPED_FLOAT")
+            
+            # Try block read if voltage and current are on the same driver to save serial transactions
+            if drv_v_pf == drv_i and not getattr(drv_v_pf, "mock_mode", False) and hasattr(drv_v_pf, "read_data") and hasattr(drv_v_pf, "read_float"):
+                try:
+                    start_addr = int(MFMRegister.VOLTAGE)
+                    if start_addr >= 40001:
+                        start_addr = start_addr - 40001
+                    elif start_addr >= 40000:
+                        start_addr = start_addr - 40000
+                    
+                    regs = drv_v_pf.read_data(address=start_addr, count=6, function_code=MFM_FUNCTION_CODE)
+                    if len(regs) >= 6:
+                        import struct
+                        # Decode float at regs[0], regs[1] -> Voltage
+                        packed_v = struct.pack('>HH', regs[1], regs[0]) if swap_v else struct.pack('>HH', regs[0], regs[1])
+                        v = struct.unpack('>f', packed_v)[0]
+                        
+                        # Decode float at regs[2], regs[3] -> Current
+                        packed_i = struct.pack('>HH', regs[3], regs[2]) if swap_i else struct.pack('>HH', regs[2], regs[3])
+                        i = struct.unpack('>f', packed_i)[0]
+                        
+                        # Decode float at regs[4], regs[5] -> Power Factor
+                        packed_pf = struct.pack('>HH', regs[5], regs[4]) if swap_pf else struct.pack('>HH', regs[4], regs[5])
+                        pf = struct.unpack('>f', packed_pf)[0]
+                        
+                        return {
+                            "voltage": v,
+                            "current": i,
+                            "power_factor": pf,
+                            "active_power": v * i * pf
+                        }
+                except Exception as e:
+                    self.logger.warning(f"MFM block read failed, falling back to individual reads: {e}")
+            
+            # Fallback to individual reads
             v = 0.0
             pf = 1.0
             if hasattr(drv_v_pf, "read_float"):
-                v = drv_v_pf.read_float(int(MFMRegister.VOLTAGE), function_code=4, swapped=True)
-                pf = drv_v_pf.read_float(int(MFMRegister.PF), function_code=4, swapped=True)
+                v = drv_v_pf.read_float(int(MFMRegister.VOLTAGE), function_code=MFM_FUNCTION_CODE, swapped=swap_v)
+                pf = drv_v_pf.read_float(int(MFMRegister.PF), function_code=MFM_FUNCTION_CODE, swapped=swap_pf)
             else:
                 v_data = drv_v_pf.read_data(address=int(MFMRegister.VOLTAGE), count=1)
                 pf_data = drv_v_pf.read_data(address=int(MFMRegister.PF), count=1)
@@ -257,7 +294,7 @@ class HardwareService(QObject):
             i = 0.0
             if drv_i and drv_i.is_connected:
                 if hasattr(drv_i, "read_float"):
-                    i = drv_i.read_float(int(MFMRegister.CURRENT), function_code=4, swapped=True)
+                    i = drv_i.read_float(int(MFMRegister.CURRENT), function_code=MFM_FUNCTION_CODE, swapped=swap_i)
                 else:
                     i_data = drv_i.read_data(address=int(MFMRegister.CURRENT), count=1)
                     i = i_data[0] if i_data else 0.0
@@ -285,9 +322,10 @@ class HardwareService(QObject):
         if not drv_i or not drv_i.is_connected:
             return 0.0
         try:
-            from core.hardware_mapping import MFMRegister
+            from core.hardware_mapping import MFMRegister, MFM_FUNCTION_CODE, MFM_REGISTER_TYPES
+            swap_i = (MFM_REGISTER_TYPES.get("CURRENT", "SWAPPED_FLOAT") == "SWAPPED_FLOAT")
             if hasattr(drv_i, "read_float"):
-                return drv_i.read_float(int(MFMRegister.CURRENT), function_code=4, swapped=True)
+                return drv_i.read_float(int(MFMRegister.CURRENT), function_code=MFM_FUNCTION_CODE, swapped=swap_i)
             else:
                 i_data = drv_i.read_data(address=int(MFMRegister.CURRENT), count=1)
                 return i_data[0] if i_data else 0.0

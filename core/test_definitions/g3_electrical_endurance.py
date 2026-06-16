@@ -31,6 +31,8 @@ def current_sensing_monitor(ctx, hw):
             ctx.logger.error("WELD FAULT DETECTED! Aborting test.")
             try:
                 hw.plc.write_coil(PLCCoil.ACB_COIL_ADDR.value, False)
+                hw.plc.write_coil(PLCCoil.CONTACTOR_120A_LOAD_BANK_COIL_ADDR.value, False)
+                hw.plc.write_coil(PLCCoil.CONTACTOR_100mA_LOAD_BANK_COIL_ADDR.value, False)
                 hw.plc.write_coil(PLCCoil.SCR_COIL_ADDR.value, False)
             except Exception:
                 pass
@@ -39,6 +41,8 @@ def current_sensing_monitor(ctx, hw):
             ctx.logger.error("OPEN FAULT DETECTED! Aborting test.")
             try:
                 hw.plc.write_coil(PLCCoil.ACB_COIL_ADDR.value, False)
+                hw.plc.write_coil(PLCCoil.CONTACTOR_120A_LOAD_BANK_COIL_ADDR.value, False)
+                hw.plc.write_coil(PLCCoil.CONTACTOR_100mA_LOAD_BANK_COIL_ADDR.value, False)
                 hw.plc.write_coil(PLCCoil.SCR_COIL_ADDR.value, False)
             except Exception:
                 pass
@@ -57,8 +61,8 @@ class G3ElectricalEnduranceTest(BaseTest):
         # 1. Prompt User to Set Load to Vc Ic UPF
         builder.prompt_user("Set Load to 240V Ic UPF", requires_input=False)
         
-        # 2-3. Turn ON ACB -> Delay -> Turn ON SCR
-        builder.start_power_sequence()
+        # 2-3. Turn ON ACB -> Delay -> Turn ON Contactor -> Turn ON SCR
+        builder.start_power_sequence(PLCCoil.CONTACTOR_120A_LOAD_BANK_COIL_ADDR)
         
         # 4. Read Meter Serial Number
         builder.send_meter_command("read_serial_number")
@@ -115,8 +119,8 @@ class G3ElectricalEnduranceTest(BaseTest):
         # 22. Validate, Showcase and store results
         builder.custom_action("Verify Energy Difference & Store Results", self._verify_and_store)
         
-        # 23-24. Turn OFF ACB & SCR
-        builder.stop_power_sequence()
+        # 23-24. Turn OFF ACB, SCR and Contactor
+        builder.stop_power_sequence(PLCCoil.CONTACTOR_120A_LOAD_BANK_COIL_ADDR)
 
     def _verify_and_store(self, ctx, hw):
         try:

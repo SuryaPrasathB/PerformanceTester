@@ -8,7 +8,11 @@
     "SCCC_TEST_START": 6,
     "FCMCT_ACK": 7,
     "PRE_FUSING_MODE_COIL_ADDR": 8,
-    "FAULT_INDICATION_BUZZER_COIL_ADDR": 9
+    "FAULT_INDICATION_BUZZER_COIL_ADDR": 9,
+    "INPUT_STATUS_REQUEST": 16,
+    "ACB_STATUS": 17,
+    "CONTACTOR_100mA_STATUS": 18,
+    "CONTACTOR_120A_STATUS": 19
   },
   "mfm_meter": {
     "connection": {
@@ -18,21 +22,21 @@
       "parity": "NONE",
       "stop_bits": 1,
       "timeout_ms": 1000,
-      "function_code": 4,
+      "function_code": 3,
       "length": 6
     },
     "registers": {
       "VOLTAGE": {
         "address": 40001,
-        "type": "SWAPPED_FLOAT"
+        "type": "FLOAT"
       },
       "CURRENT": {
         "address": 40003,
-        "type": "SWAPPED_FLOAT"
+        "type": "FLOAT"
       },
       "PF": {
         "address": 40005,
-        "type": "SWAPPED_FLOAT"
+        "type": "FLOAT"
       }
     }
   }

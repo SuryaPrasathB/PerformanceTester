@@ -1,5 +1,6 @@
 from core.test_definitions.base_test import BaseTest
 from core.test_engine.test_builder import TestBuilder
+from core.hardware_mapping import PLCCoil
 
 class G7MinimumSwitchedCurrentTest(BaseTest):
     """
@@ -12,7 +13,7 @@ class G7MinimumSwitchedCurrentTest(BaseTest):
         # 2. Turn ON ACB (PLC Coil ACB_COIL_ADDR = 0x03).
         # 3. Delay as required.
         # 4. Turn ON SCR (PLC Coil SCR_COIL_ADDR = 0x04).
-        builder.start_power_sequence()
+        builder.start_power_sequence(PLCCoil.CONTACTOR_100mA_LOAD_BANK_COIL_ADDR)
         
         # 5. Read meter serial number.
         builder.send_meter_command("read_serial_number")
@@ -52,4 +53,4 @@ class G7MinimumSwitchedCurrentTest(BaseTest):
         
         # 11. Turn OFF ACB
         # 12. Turn OFF SCR
-        builder.stop_power_sequence()
+        builder.stop_power_sequence(PLCCoil.CONTACTOR_100mA_LOAD_BANK_COIL_ADDR)

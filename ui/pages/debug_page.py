@@ -67,17 +67,48 @@ class DebugPollWorker(QThread):
                 mfm1_connected = mfm1_driver and mfm1_driver.is_connected
                 data["mfm1_connected"] = mfm1_connected
                 if mfm1_connected:
-                    if hasattr(mfm1_driver, "read_float"):
-                        v = mfm1_driver.read_float(int(MFMRegister.VOLTAGE), function_code=4, swapped=True)
-                        i = mfm1_driver.read_float(int(MFMRegister.CURRENT), function_code=4, swapped=True)
-                        pf = mfm1_driver.read_float(int(MFMRegister.PF), function_code=4, swapped=True)
-                    else:
-                        v_data = mfm1_driver.read_data(address=int(MFMRegister.VOLTAGE), count=1)
-                        i_data = mfm1_driver.read_data(address=int(MFMRegister.CURRENT), count=1)
-                        pf_data = mfm1_driver.read_data(address=int(MFMRegister.PF), count=1)
-                        v = v_data[0] if v_data else 0.0
-                        i = i_data[0] if i_data else 0.0
-                        pf = pf_data[0] if pf_data else 1.0
+                    from core.hardware_mapping import MFM_FUNCTION_CODE, MFM_REGISTER_TYPES
+                    swap_v = (MFM_REGISTER_TYPES.get("VOLTAGE", "SWAPPED_FLOAT") == "SWAPPED_FLOAT")
+                    swap_i = (MFM_REGISTER_TYPES.get("CURRENT", "SWAPPED_FLOAT") == "SWAPPED_FLOAT")
+                    swap_pf = (MFM_REGISTER_TYPES.get("PF", "SWAPPED_FLOAT") == "SWAPPED_FLOAT")
+                    
+                    v, i, pf = 0.0, 0.0, 1.0
+                    block_success = False
+                    if not getattr(mfm1_driver, "mock_mode", False) and hasattr(mfm1_driver, "read_data") and hasattr(mfm1_driver, "read_float"):
+                        try:
+                            start_addr = int(MFMRegister.VOLTAGE)
+                            if start_addr >= 40001:
+                                start_addr = start_addr - 40001
+                            elif start_addr >= 40000:
+                                start_addr = start_addr - 40000
+                            
+                            regs = mfm1_driver.read_data(address=start_addr, count=6, function_code=MFM_FUNCTION_CODE)
+                            if len(regs) >= 6:
+                                import struct
+                                packed_v = struct.pack('>HH', regs[1], regs[0]) if swap_v else struct.pack('>HH', regs[0], regs[1])
+                                v = struct.unpack('>f', packed_v)[0]
+                                
+                                packed_i = struct.pack('>HH', regs[3], regs[2]) if swap_i else struct.pack('>HH', regs[2], regs[3])
+                                i = struct.unpack('>f', packed_i)[0]
+                                
+                                packed_pf = struct.pack('>HH', regs[5], regs[4]) if swap_pf else struct.pack('>HH', regs[4], regs[5])
+                                pf = struct.unpack('>f', packed_pf)[0]
+                                block_success = True
+                        except Exception:
+                            pass
+                            
+                    if not block_success:
+                        if hasattr(mfm1_driver, "read_float"):
+                            v = mfm1_driver.read_float(int(MFMRegister.VOLTAGE), function_code=MFM_FUNCTION_CODE, swapped=swap_v)
+                            i = mfm1_driver.read_float(int(MFMRegister.CURRENT), function_code=MFM_FUNCTION_CODE, swapped=swap_i)
+                            pf = mfm1_driver.read_float(int(MFMRegister.PF), function_code=MFM_FUNCTION_CODE, swapped=swap_pf)
+                        else:
+                            v_data = mfm1_driver.read_data(address=int(MFMRegister.VOLTAGE), count=1)
+                            i_data = mfm1_driver.read_data(address=int(MFMRegister.CURRENT), count=1)
+                            pf_data = mfm1_driver.read_data(address=int(MFMRegister.PF), count=1)
+                            v = v_data[0] if v_data else 0.0
+                            i = i_data[0] if i_data else 0.0
+                            pf = pf_data[0] if pf_data else 1.0
                     data["mfm1_readings"] = (v, i, pf)
 
                 # 5. Poll MFM Meter 2
@@ -85,17 +116,19 @@ class DebugPollWorker(QThread):
                 mfm2_connected = mfm2_driver and mfm2_driver.is_connected
                 data["mfm2_connected"] = mfm2_connected
                 if mfm2_connected:
-                    if hasattr(mfm2_driver, "read_float"):
-                        v = mfm2_driver.read_float(int(MFMRegister.VOLTAGE), function_code=4, swapped=True)
-                        i = mfm2_driver.read_float(int(MFMRegister.CURRENT), function_code=4, swapped=True)
-                        pf = mfm2_driver.read_float(int(MFMRegister.PF), function_code=4, swapped=True)
-                    else:
-                        v_data = mfm2_driver.read_data(address=int(MFMRegister.VOLTAGE), count=1)
-                        i_data = mfm2_driver.read_data(address=int(MFMRegister.CURRENT), count=1)
-                        pf_data = mfm2_driver.read_data(address=int(MFMRegister.PF), count=1)
-                        v = v_data[0] if v_data else 0.0
-                        i = i_data[0] if i_data else 0.0
-                        pf = pf_data[0] if pf_data else 1.0
+                    from core.hardware_mapping import MFM_FUNCTION_CODE, MFM_REGISTER_TYPES
+                    swap_i = (MFM_REGISTER_TYPES.get("CURRENT", "SWAPPED_FLOAT") == "SWAPPED_FLOAT")
+                    
+                    v, i, pf = None, 0.0, None
+                    try:
+                        # MFMMeter2 is only for mA current sensing in G7, so we avoid querying Voltage and PF to prevent errors/timeouts
+                        if hasattr(mfm2_driver, "read_float"):
+                            i = mfm2_driver.read_float(int(MFMRegister.CURRENT), function_code=MFM_FUNCTION_CODE, swapped=swap_i)
+                        else:
+                            i_data = mfm2_driver.read_data(address=int(MFMRegister.CURRENT), count=1)
+                            i = i_data[0] if i_data else 0.0
+                    except Exception:
+                        pass
                     data["mfm2_readings"] = (v, i, pf)
 
                 # 6. Poll PicoScope
@@ -1033,9 +1066,9 @@ class DebugPage(QWidget, Ui_DebugPage):
         m2_vals = data.get("mfm2_readings")
         if m2_vals is not None:
             v, i, pf = m2_vals
-            self.lbl_mfm2_val_v.setText(f"{v:.1f} V")
+            self.lbl_mfm2_val_v.setText(f"{v:.1f} V" if v is not None else "N/A")
             self.lbl_mfm2_val_i.setText(f"{i:.3f} A")
-            self.lbl_mfm2_val_pf.setText(f"{pf:.2f}")
+            self.lbl_mfm2_val_pf.setText(f"{pf:.2f}" if pf is not None else "N/A")
 
         # 6. Update PicoScope
         if hasattr(self, 'lbl_picoscope_led'):

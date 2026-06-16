@@ -24,11 +24,8 @@ class TestPage(QWidget, Ui_TestPage):
         # Apply Premium Styling to Progress Bar
         self._apply_premium_styling()
 
-        # Setup telemetry timer for when the test is not running
-        self.telemetry_timer = QTimer(self)
-        self.telemetry_timer.setInterval(1000) # Poll every 1 second
-        self.telemetry_timer.timeout.connect(self._poll_telemetry)
-        self.telemetry_timer.start()
+        # Initial live data display
+        self.lbl_live_data.setText("STATE: IDLE | V: -- V | I: -- A | PF: --")
 
         # Progress Animation Engine
         self.progress_anim = QPropertyAnimation(self.progress_bar, b"value")
@@ -276,24 +273,7 @@ class TestPage(QWidget, Ui_TestPage):
         
         self.lbl_live_data.setText(f"STATE: {state} | V: {v_str}V | I: {i_str}A | PF: {pf_str}")
 
-    def _poll_telemetry(self):
-        # Only poll if test is not running
-        if self.test_runner and self.test_runner.isRunning():
-            return
-            
-        mfm_drv = self.device_manager.drivers.get("MFMMeter1")
-        if mfm_drv and mfm_drv.is_connected:
-            try:
-                from core.hardware_mapping import MFMRegister
-                if hasattr(mfm_drv, "read_float"):
-                    v = mfm_drv.read_float(int(MFMRegister.VOLTAGE), function_code=4, swapped=True)
-                    i = mfm_drv.read_float(int(MFMRegister.CURRENT), function_code=4, swapped=True)
-                    pf = mfm_drv.read_float(int(MFMRegister.PF), function_code=4, swapped=True)
-                    self.lbl_live_data.setText(f"STATE: IDLE | V: {v:.1f}V | I: {i:.3f}A | PF: {pf:.2f}")
-                    return
-            except Exception:
-                pass
-        self.lbl_live_data.setText("STATE: IDLE | V: -- V | I: -- A | PF: --")
+
         
     @Slot(str)
     def update_status_text(self, text: str):
@@ -337,6 +317,7 @@ class TestPage(QWidget, Ui_TestPage):
 
     @Slot()
     def handle_test_finished(self):
+        self.lbl_live_data.setText("STATE: IDLE | V: -- V | I: -- A | PF: --")
         self.progress_anim.stop()
         self.cmb_meter_profile.setEnabled(True)
         self.btn_start.setEnabled(True)

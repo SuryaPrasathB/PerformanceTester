@@ -12,6 +12,9 @@ class ManualProspectiveCurrentTest(BaseTest):
         # 1. Prompt User to set Load Vc, (2.5 / 3 / 4.5 / 6) kA, UPF
         builder.prompt_user("Set Load Vc, (2.5 / 3 / 4.5 / 6) kA, UPF", requires_input=False)
         
+        # Start Power Sequence (ACB -> Delay -> 120A Contactor -> SCR)
+        builder.start_power_sequence(PLCCoil.CONTACTOR_120A_LOAD_BANK_COIL_ADDR)
+        
         # 2. Close Load Switch
         builder.send_meter_command("close_load_switch")
         
@@ -36,4 +39,4 @@ class ManualProspectiveCurrentTest(BaseTest):
         
         # 8. Turn OFF ACB
         # 9. Turn OFF SCR
-        builder.stop_power_sequence()
+        builder.stop_power_sequence(PLCCoil.CONTACTOR_120A_LOAD_BANK_COIL_ADDR)

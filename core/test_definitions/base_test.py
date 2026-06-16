@@ -77,6 +77,18 @@ class BaseTest(ABC):
                         context.logger.info("BaseTest Cleanup: SCR coil set to OFF")
                     except Exception as e:
                         context.logger.error(f"Failed to turn OFF SCR coil during cleanup: {e}")
+
+                    try:
+                        hw.plc.write_coil(PLCCoil.CONTACTOR_120A_LOAD_BANK_COIL_ADDR.value, False)
+                        context.logger.info("BaseTest Cleanup: 120A Contactor coil set to OFF")
+                    except Exception as e:
+                        context.logger.error(f"Failed to turn OFF 120A contactor coil during cleanup: {e}")
+
+                    try:
+                        hw.plc.write_coil(PLCCoil.CONTACTOR_100mA_LOAD_BANK_COIL_ADDR.value, False)
+                        context.logger.info("BaseTest Cleanup: 100mA Contactor coil set to OFF")
+                    except Exception as e:
+                        context.logger.error(f"Failed to turn OFF 100mA contactor coil during cleanup: {e}")
                 
                 # Turn OFF load controller
                 if hasattr(hw, "control_load"):
