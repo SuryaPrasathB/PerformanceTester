@@ -38,6 +38,58 @@ class TestPage(QWidget, Ui_TestPage):
         self.frame_graphs_container.hide()
         self.horizontalLayout_graphs.setAlignment(Qt.AlignCenter)
 
+        # Create cycles container frame programmatically
+        from PySide6.QtWidgets import QFrame, QHBoxLayout, QVBoxLayout, QLabel, QProgressBar
+        from PySide6.QtCore import QSize
+        
+        self.frame_cycles_container = QFrame(self.widget_center_container)
+        self.frame_cycles_container.setObjectName("frame_cycles_container")
+        self.frame_cycles_container.setMinimumSize(QSize(16777215, 90))
+        self.frame_cycles_container.setMaximumSize(QSize(16777215, 90))
+        self.frame_cycles_container.setFrameShape(QFrame.StyledPanel)
+        
+        # Horizontal layout for the components
+        self.horizontalLayout_cycles = QHBoxLayout(self.frame_cycles_container)
+        self.horizontalLayout_cycles.setSpacing(20)
+        self.horizontalLayout_cycles.setObjectName("horizontalLayout_cycles")
+        self.horizontalLayout_cycles.setContentsMargins(20, 10, 20, 10)
+        
+        # Left side: Cycle Info Labels (Vertical)
+        self.verticalLayout_cycle_info = QVBoxLayout()
+        self.verticalLayout_cycle_info.setSpacing(4)
+        self.verticalLayout_cycle_info.setObjectName("verticalLayout_cycle_info")
+        
+        self.lbl_cycle_header = QLabel("TEST CYCLE PROGRESS", self.frame_cycles_container)
+        self.lbl_cycle_header.setObjectName("lbl_cycle_header")
+        
+        self.lbl_cycle_counter = QLabel("Cycle 0 of 0", self.frame_cycles_container)
+        self.lbl_cycle_counter.setObjectName("lbl_cycle_counter")
+        
+        self.verticalLayout_cycle_info.addWidget(self.lbl_cycle_header)
+        self.verticalLayout_cycle_info.addWidget(self.lbl_cycle_counter)
+        self.horizontalLayout_cycles.addLayout(self.verticalLayout_cycle_info)
+        
+        # Center: Progress Bar
+        self.cycle_progress_bar = QProgressBar(self.frame_cycles_container)
+        self.cycle_progress_bar.setObjectName("cycle_progress_bar")
+        self.cycle_progress_bar.setMinimumSize(QSize(0, 16))
+        self.cycle_progress_bar.setMaximumSize(QSize(16777215, 16))
+        self.cycle_progress_bar.setTextVisible(False)
+        self.horizontalLayout_cycles.addWidget(self.cycle_progress_bar, stretch=1)
+        
+        # Right side: Percentage text
+        self.lbl_cycle_percentage = QLabel("0%", self.frame_cycles_container)
+        self.lbl_cycle_percentage.setObjectName("lbl_cycle_percentage")
+        self.lbl_cycle_percentage.setMinimumSize(QSize(60, 0))
+        self.lbl_cycle_percentage.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        self.horizontalLayout_cycles.addWidget(self.lbl_cycle_percentage)
+        
+        self.frame_cycles_container.hide()
+        
+        # Insert into the vertical center layout right after the instructions card
+        instr_idx = self.verticalLayout_center.indexOf(self.frame_instruction)
+        self.verticalLayout_center.insertWidget(instr_idx + 1, self.frame_cycles_container)
+
     def _connect_signals(self):
         self.btn_start.clicked.connect(self.start_test)
         self.btn_stop.clicked.connect(self.toggle_pause_resume)
@@ -156,6 +208,7 @@ class TestPage(QWidget, Ui_TestPage):
         self.dynamic_cards = []
         self.lbl_graphs_placeholder.show()
         self.frame_graphs_container.hide()
+        self.frame_cycles_container.hide()
 
         self.test_runner = TestRunner(test_instance, context)
         
@@ -166,6 +219,7 @@ class TestPage(QWidget, Ui_TestPage):
         self.test_runner.on_user_action_required.connect(self.prompt_user_action)
         self.test_runner.on_status_update.connect(self.update_status_text)
         self.test_runner.on_step_animate.connect(self.smart_step_animate)
+        self.test_runner.on_cycle_update.connect(self.update_cycle_progress)
         
         hw_service = self.test_runner.context.hardware_service
         if hw_service:
@@ -291,6 +345,7 @@ class TestPage(QWidget, Ui_TestPage):
         self.btn_done.hide()
         self.input_instruction.hide()
         self.progress_bar.setValue(100)
+        self.frame_cycles_container.hide()
         
         if not self.test_runner:
             is_dark = getattr(self.main_window, "current_theme", "light") == "dark"
@@ -490,3 +545,15 @@ class TestPage(QWidget, Ui_TestPage):
         card = WaveformCard(name, data, timebase, range_val, self.frame_graphs_container)
         self.horizontalLayout_graphs.addWidget(card)
         self.dynamic_cards.append(card)
+
+    @Slot(int, int)
+    def update_cycle_progress(self, current: int, total: int):
+        """Updates the active test cycle visualization panel."""
+        if total > 0:
+            self.frame_cycles_container.show()
+            self.lbl_cycle_counter.setText(f"Cycle {current} of {total}")
+            self.cycle_progress_bar.setRange(0, total)
+            self.cycle_progress_bar.setValue(current)
+            self.lbl_cycle_percentage.setText(f"{int((current / total) * 100)}%")
+        else:
+            self.frame_cycles_container.hide()

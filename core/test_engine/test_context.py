@@ -49,6 +49,7 @@ class TestContext:
         self._status_callback = None
         self._progress_callback = None
         self._step_callback = None
+        self._cycle_callback = None
         
         # Background Tasks
         self.background_tasks = {}
@@ -82,25 +83,36 @@ class TestContext:
         """Gets a runtime value."""
         return self.runtime_values.get(key, default)
 
-    def push_loop(self, loop_id: int):
+    def push_loop(self, loop_id: int, total_loops: int = 1):
         """Pushes a new loop context onto the loop stack."""
         self.loop_stack.append({
             'loop_id': loop_id,
             'iteration': 0,
             'prompt_index': 0,
-            'prompts_history': {}
+            'prompts_history': {},
+            'total_loops': total_loops
         })
+        if self._cycle_callback:
+            self._cycle_callback(1, total_loops)
 
     def pop_loop(self):
         """Pops the topmost loop context off the loop stack."""
         if self.loop_stack:
             self.loop_stack.pop()
+            if self._cycle_callback:
+                if self.loop_stack:
+                    outer = self.loop_stack[-1]
+                    self._cycle_callback(outer['iteration'] + 1, outer['total_loops'])
+                else:
+                    self._cycle_callback(0, 0)
 
     def set_loop_iteration(self, iteration: int):
         """Sets the current iteration for the active loop, resetting the prompt index."""
         if self.loop_stack:
             self.loop_stack[-1]['iteration'] = iteration
             self.loop_stack[-1]['prompt_index'] = 0
+            if self._cycle_callback:
+                self._cycle_callback(iteration + 1, self.loop_stack[-1]['total_loops'])
 
     def prompt_user_action(self, instruction_text: str, requires_input: bool = False) -> str:
         """

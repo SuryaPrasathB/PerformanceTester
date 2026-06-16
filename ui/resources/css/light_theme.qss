@@ -35,7 +35,7 @@ QMessageBox QPushButton {
 /* -------------------------------------
    Cards / Panels
 --------------------------------------*/
-QFrame#frame_header, QFrame#frame_sidebar, QFrame#frame_instruction, QFrame#frame_logs, QFrame#frame_footer, QFrame#frame_settings {
+QFrame#frame_header, QFrame#frame_sidebar, QFrame#frame_instruction, QFrame#frame_logs, QFrame#frame_footer, QFrame#frame_settings, QFrame#frame_cycles_container {
     background-color: #FFFFFF;
     border-radius: 12px;
     border: 1px solid #E2E8F0; /* Slate 200 */
@@ -92,6 +92,27 @@ QLabel#lbl_live_data {
     padding: 12px 20px;
     border-radius: 8px;
     border: 1px solid #E2E8F0;
+}
+
+/* Cycle Tracking Elements */
+QLabel#lbl_cycle_header {
+    font-size: 11px;
+    font-weight: 700;
+    color: #64748B; /* Slate 500 */
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+}
+
+QLabel#lbl_cycle_counter {
+    font-size: 20px;
+    font-weight: 800;
+    color: #10B981; /* Emerald 500 */
+}
+
+QLabel#lbl_cycle_percentage {
+    font-size: 20px;
+    font-weight: 800;
+    color: #059669; /* Emerald 600 */
 }
 
 /* -------------------------------------
@@ -269,6 +290,18 @@ QProgressBar {
 
 QProgressBar::chunk {
     background-color: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #38BDF8, stop:1 #2563EB);
+    border-radius: 6px;
+}
+
+QProgressBar#cycle_progress_bar {
+    background-color: #F1F5F9;
+    border: 1px solid #CBD5E1;
+    border-radius: 8px;
+    text-align: center;
+}
+
+QProgressBar#cycle_progress_bar::chunk {
+    background-color: qlineargradient(spread:pad, x1:0, y1:0, x2:1, y2:0, stop:0 #059669, stop:1 #10B981);
     border-radius: 6px;
 }
 

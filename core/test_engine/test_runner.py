@@ -21,6 +21,7 @@ class TestRunner(QThread):
     on_status_update = Signal(str)
     on_progress_update = Signal(int)
     on_step_animate = Signal(int, int, int) # start, end, duration_ms
+    on_cycle_update = Signal(int, int) # current_cycle, total_cycles
     
     def __init__(self, test_instance: BaseTest, context: TestContext):
         super().__init__()
@@ -30,6 +31,7 @@ class TestRunner(QThread):
         self.context._status_callback = self.on_status_update.emit
         self.context._progress_callback = self.on_progress_update.emit
         self.context._step_callback = self._handle_step_started
+        self.context._cycle_callback = self._emit_cycle
         self.state_machine = StateMachine()
         
         self.step_ranges = {}
@@ -229,6 +231,10 @@ class TestRunner(QThread):
     def _emit_prompt(self, msg: str, req_input: bool):
         """Helper to safely emit the user prompt from test context."""
         self.on_user_action_required.emit(msg, req_input)
+        
+    def _emit_cycle(self, current: int, total: int):
+        """Helper to safely emit active loop cycle progress to the UI."""
+        self.on_cycle_update.emit(current, total)
         
     def resume_from_user(self, user_input: str):
         """Called by UI when user finishes interaction."""

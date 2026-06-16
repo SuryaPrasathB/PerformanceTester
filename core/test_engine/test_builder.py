@@ -322,7 +322,7 @@ class TestBuilder:
         def action(ctx, hw):
             min_duration = ctx.config.get("testing", {}).get("min_step_duration_s", 1.0)
             loop_id = id(action)
-            ctx.push_loop(loop_id)
+            ctx.push_loop(loop_id, count)
             try:
                 for i in range(count):
                     ctx.update_status(f"Loop {i+1}/{count}")
