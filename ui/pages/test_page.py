@@ -345,6 +345,10 @@ class TestPage(QWidget, Ui_TestPage):
         state = self.test_runner.state_machine.get_state()
         serial = str(self.test_runner.context.meter_serial_number).strip() if self.test_runner.context.meter_serial_number else "UNKNOWN"
         
+        is_dark = getattr(self.main_window, "current_theme", "light") == "dark"
+        sec_color = "#94A3B8" if is_dark else "#64748B"
+        text_color = "#F8FAFC" if is_dark else "#0F172A"
+        
         # Determine result and styling
         if state == TestState.COMPLETE:
             is_success = self.test_runner.context.test_results.get("success", True)
@@ -361,15 +365,17 @@ class TestPage(QWidget, Ui_TestPage):
             result = "INCOMPLETE"
             color = "#64748B" # Slate
             
-        is_dark = getattr(self.main_window, "current_theme", "light") == "dark"
-        sec_color = "#94A3B8" if is_dark else "#64748B"
-        text_color = "#F8FAFC" if is_dark else "#0F172A"
+        calculated_pf_str = ""
+        if self.test_runner and isinstance(self.test_runner.context.test_results, dict):
+            calc_pf = self.test_runner.context.test_results.get("calculated_pf")
+            if calc_pf is not None:
+                calculated_pf_str = f"<br><span style='font-size: 16px; color: {text_color};'>Calculated PF: <span style='font-weight: bold; color: #10B981;'>{calc_pf:.3f}</span></span>"
         
         html = f"""
         <div align='center' style='line-height: 140%;'>
             <span style='font-size: 14px; color: {sec_color}; font-weight: bold; letter-spacing: 1px;'>TEST SEQUENCE ENDED</span><br>
             <span style='font-size: 34px; color: {color}; font-weight: 800; letter-spacing: 0.5px;'>{result}</span><br>
-            <span style='font-size: 16px; color: {text_color};'>Meter Serial: <span style='font-weight: bold;'>{serial}</span></span>
+            <span style='font-size: 16px; color: {text_color};'>Meter Serial: <span style='font-weight: bold;'>{serial}</span></span>{calculated_pf_str}
         </div>
         """
         self.lbl_instruction.setText(html)

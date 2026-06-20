@@ -152,7 +152,8 @@ class WaveformGraph(QWidget):
 
     def detect_interest_area(self):
         """Robust event window detection helper."""
-        if not self.data_a or len(self.data_a) < 100:
+        dataset = self.data_b if (self.data_b and len(self.data_b) >= 100) else self.data_a
+        if not dataset or len(dataset) < 100:
             return None
 
         # 1. Compute moving RMS envelope (1ms window)
@@ -162,7 +163,7 @@ class WaveformGraph(QWidget):
 
         rms = []
         max_rms = 0.0
-        n = len(self.data_a)
+        n = len(dataset)
         
         half_win = window_size // 2
         for i in range(n):
@@ -170,7 +171,7 @@ class WaveformGraph(QWidget):
             end = min(n, i + half_win + 1)
             sum_sq = 0.0
             for j in range(start, end):
-                sum_sq += self.data_a[j] * self.data_a[j]
+                sum_sq += dataset[j] * dataset[j]
             val = math.sqrt(sum_sq / (end - start))
             rms.append(val)
             if val > max_rms:

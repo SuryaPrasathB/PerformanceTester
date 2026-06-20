@@ -19,8 +19,8 @@ def calculate_pulse_duration(current_data: list, timebase: int) -> float:
     peak_val = max(abs(x) for x in current_data)
     
     # Noise threshold: if peak value is too small, assume no pulse
-    if peak_val < 5.0:
-        logger.debug(f"Peak current value ({peak_val:.2f}) is below noise threshold 5.0. No pulse detected.")
+    if peak_val < 0.05:
+        logger.debug(f"Peak current value ({peak_val:.2f}) is below noise threshold 0.05. No pulse detected.")
         return 0.0
 
     # Find the index of the peak absolute value

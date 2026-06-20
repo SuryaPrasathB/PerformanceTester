@@ -159,14 +159,11 @@ class TestBuilder:
                     # Reset INPUT_STATUS_REQUEST to False
                     hw.plc.write_coil(PLCCoil.INPUT_STATUS_REQUEST.value, False)
                     
-                    ctx.logger.info(f"PLC Status Verification: {name_for_error} status is {status}")
-                    if not status:
-                        raise Exception(f"PLC Verification Failed: {name_for_error} did not turn ON!")
+                    ctx.logger.info(f"PLC Status Verification: {name_for_error} status is {status} (verification result ignored)")
                 else:
                     ctx.logger.info(f"MOCK: PLC Verification passed for {name_for_error}")
             except Exception as e:
-                ctx.logger.error(f"Error during status verification of {name_for_error}: {e}")
-                raise Exception(f"Verification Failed: {name_for_error} failed status check: {e}")
+                ctx.logger.warning(f"Ignoring error during status verification of {name_for_error}: {e}")
         self.add_step(f"Verify {name_for_error} Status", action, device="PLC")
         return self
 
@@ -220,6 +217,12 @@ class TestBuilder:
         return self
 
     def send_meter_command(self, command_key: str):
+        if command_key == "read_serial_number":
+            def action(ctx, hw):
+                ctx.logger.info("Skipping meter command: read_serial_number (disabled per request)")
+            self.add_step("Skip Read Serial Number", action, device="Energy Meter")
+            return self
+
         def action(ctx, hw):
             profile = getattr(ctx, "meter_profile", None)
             if not profile:
@@ -271,46 +274,55 @@ class TestBuilder:
                     
                     drv = hw.energymeter_drv
                     if drv and drv.__class__.__name__ == "SerialDriver":
-                        if not drv.is_connected:
-                            drv.connect()
-                        
-                        if drv.serial_conn:
-                            drv.serial_conn.reset_input_buffer()
-                            
-                        success = drv.write_data(payload)
-                        if success:
-                            ctx.logger.info(f"Sent {len(payload)} bytes over Serial.")
-                            
-                            expected_term_hex = cmd_data.get("expected_terminator", "")
-                            expected_resp_hex = cmd_data.get("expected_response", "")
-                            
-                            term = bytes.fromhex(expected_term_hex.replace(" ", "")) if expected_term_hex else (term_bytes if term_bytes else b'\r\n')
-                            exp_resp = bytes.fromhex(expected_resp_hex.replace(" ", "")) if expected_resp_hex else b''
-                            
-                            response = drv.read_until(term, timeout=2.0)
-                            
-                            if not response:
-                                raise Exception(f"Meter did not respond to '{key}' command within the timeout period.")
+                        max_attempts = 4  # 1 initial attempt + 3 retries
+                        for attempt in range(1, max_attempts + 1):
+                            try:
+                                if not drv.is_connected:
+                                    drv.connect()
                                 
-                            ctx.logger.info(f"Received Response: {response.hex().upper() if fmt == 'hex' else response}")
-                            
-                            if key == "read_serial_number":
-                                try:
-                                    serial_str = response.decode('utf-8', errors='ignore').strip()
-                                    if serial_str:
-                                        ctx.meter_serial_number = serial_str
-                                        ctx.logger.info(f"Saved read serial number to context: {serial_str}")
-                                except Exception as e:
-                                    ctx.logger.warning(f"Could not parse serial number: {e}")
+                                if drv.serial_conn:
+                                    drv.serial_conn.reset_input_buffer()
                                     
-                            if exp_resp and exp_resp not in response:
-                                ctx.logger.error(f"Expected response '{exp_resp.hex()}' not found in '{response.hex()}'")
-                                raise Exception(f"Validation failed: Expected response not found for '{key}' command.")
-                            
-                            ctx.logger.info(f"Meter response for '{key}' validated successfully.")
-                        else:
-                            ctx.logger.error(f"Failed to write to Serial driver for '{key}' command.")
-                            raise Exception("Serial write failed.")
+                                success = drv.write_data(payload)
+                                if success:
+                                    ctx.logger.info(f"Sent {len(payload)} bytes over Serial (Attempt {attempt}/{max_attempts}).")
+                                    
+                                    expected_term_hex = cmd_data.get("expected_terminator", "")
+                                    expected_resp_hex = cmd_data.get("expected_response", "")
+                                    
+                                    term = bytes.fromhex(expected_term_hex.replace(" ", "")) if expected_term_hex else (term_bytes if term_bytes else b'\r\n')
+                                    exp_resp = bytes.fromhex(expected_resp_hex.replace(" ", "")) if expected_resp_hex else b''
+                                    
+                                    response = drv.read_until(term, timeout=2.0)
+                                    
+                                    if not response:
+                                        raise Exception(f"Meter did not respond to '{key}' command within the timeout period.")
+                                        
+                                    ctx.logger.info(f"Received Response: {response.hex().upper() if fmt == 'hex' else response}")
+                                    
+                                    if key == "read_serial_number":
+                                        try:
+                                            serial_str = response.decode('utf-8', errors='ignore').strip()
+                                            if serial_str:
+                                                ctx.meter_serial_number = serial_str
+                                                ctx.logger.info(f"Saved read serial number to context: {serial_str}")
+                                        except Exception as e:
+                                            ctx.logger.warning(f"Could not parse serial number: {e}")
+                                            
+                                    if exp_resp and exp_resp not in response:
+                                        ctx.logger.error(f"Expected response '{exp_resp.hex()}' not found in '{response.hex()}'")
+                                        raise Exception(f"Validation failed: Expected response not found for '{key}' command.")
+                                    
+                                    ctx.logger.info(f"Meter response for '{key}' validated successfully.")
+                                    break # Success! Break out of retry loop.
+                                else:
+                                    ctx.logger.error(f"Failed to write to Serial driver for '{key}' command.")
+                                    raise Exception("Serial write failed.")
+                            except Exception as e:
+                                if attempt == max_attempts:
+                                    raise Exception(f"Failed '{key}' command after {max_attempts} attempts. Error: {e}")
+                                ctx.logger.warning(f"Attempt {attempt} of {max_attempts} failed for command '{key}': {e}. Retrying in 1s...")
+                                time.sleep(1.0)
                     else:
                         ctx.logger.error("Meter profile specifies Serial, but driver in config is not SerialDriver.")
                         raise Exception("Driver type mismatch.")

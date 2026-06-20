@@ -257,7 +257,10 @@ class ModbusDriver(BaseDriver):
                 time.sleep(0.02)
                 # realistic simulator readings
                 if address in (40001, 0):
-                    res = 240.2 + random.uniform(-1.0, 1.0)
+                    if self.slave_id == 2:
+                        res = 0.045 + random.uniform(-0.005, 0.005)
+                    else:
+                        res = 240.2 + random.uniform(-1.0, 1.0)
                 elif address in (40003, 2):
                     res = 5.15 + random.uniform(-0.1, 0.1)
                 elif address in (40005, 4):

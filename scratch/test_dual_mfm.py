@@ -143,7 +143,7 @@ class TestDualMFM(unittest.TestCase):
         swap_pf = (MFM_REGISTER_TYPES.get("PF", "SWAPPED_FLOAT") == "SWAPPED_FLOAT")
         hw.mfm_drv.read_float.assert_any_call(40001, function_code=MFM_FUNCTION_CODE, swapped=swap_v)
         hw.mfm_drv.read_float.assert_any_call(40005, function_code=MFM_FUNCTION_CODE, swapped=swap_pf)
-        hw.mfm2_drv.read_float.assert_called_with(40003, function_code=MFM_FUNCTION_CODE, swapped=swap_i)
+        hw.mfm2_drv.read_float.assert_called_with(40001, function_code=MFM_FUNCTION_CODE, swapped=swap_i)
         
         # Cleanup
         dm.cleanup()

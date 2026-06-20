@@ -249,6 +249,11 @@ class WaveformCard(QFrame):
         
         tb_layout.addStretch()
         
+        if self.calculated_pf is not None:
+            lbl_pf_val = QLabel(f"Calculated PF: {self.calculated_pf:.3f} ({self.pulse_duration:.2f} ms)", toolbar)
+            lbl_pf_val.setStyleSheet("font-size: 14px; font-weight: bold; color: #10B981; padding-right: 15px;")
+            tb_layout.addWidget(lbl_pf_val)
+            
         btn_close = QPushButton("CLOSE", toolbar)
         btn_close.setMinimumHeight(32)
         btn_close.setStyleSheet("""

@@ -122,10 +122,11 @@ class DebugPollWorker(QThread):
                     v, i, pf = None, 0.0, None
                     try:
                         # MFMMeter2 is only for mA current sensing in G7, so we avoid querying Voltage and PF to prevent errors/timeouts
+                        # Register 40001 is for current reading on MFMMeter2
                         if hasattr(mfm2_driver, "read_float"):
-                            i = mfm2_driver.read_float(int(MFMRegister.CURRENT), function_code=MFM_FUNCTION_CODE, swapped=swap_i)
+                            i = mfm2_driver.read_float(40001, function_code=MFM_FUNCTION_CODE, swapped=swap_i)
                         else:
-                            i_data = mfm2_driver.read_data(address=int(MFMRegister.CURRENT), count=1)
+                            i_data = mfm2_driver.read_data(address=40001, count=1)
                             i = i_data[0] if i_data else 0.0
                     except Exception:
                         pass
@@ -561,24 +562,12 @@ class DebugPage(QWidget, Ui_DebugPage):
         readings_layout = QGridLayout(self.mfm2_readings_box)
         readings_layout.setSpacing(15)
         
-        lbl_v = QLabel(f"Voltage (Reg {int(MFMRegister.VOLTAGE)}):")
-        self.lbl_mfm2_val_v = QLabel("--- V")
-        self.lbl_mfm2_val_v.setStyleSheet("font-weight: bold; color: #38BDF8; font-size: 16px;")
-        
-        lbl_i = QLabel(f"Current (Reg {int(MFMRegister.CURRENT)}):")
+        lbl_i = QLabel("Current (Reg 40001):")
         self.lbl_mfm2_val_i = QLabel("--- A")
         self.lbl_mfm2_val_i.setStyleSheet("font-weight: bold; color: #38BDF8; font-size: 16px;")
         
-        lbl_pf = QLabel(f"Power Factor (Reg {int(MFMRegister.PF)}):")
-        self.lbl_mfm2_val_pf = QLabel("---")
-        self.lbl_mfm2_val_pf.setStyleSheet("font-weight: bold; color: #38BDF8; font-size: 16px;")
-        
-        readings_layout.addWidget(lbl_v, 0, 0)
-        readings_layout.addWidget(self.lbl_mfm2_val_v, 0, 1)
-        readings_layout.addWidget(lbl_i, 0, 2)
-        readings_layout.addWidget(self.lbl_mfm2_val_i, 0, 3)
-        readings_layout.addWidget(lbl_pf, 0, 4)
-        readings_layout.addWidget(self.lbl_mfm2_val_pf, 0, 5)
+        readings_layout.addWidget(lbl_i, 0, 0)
+        readings_layout.addWidget(self.lbl_mfm2_val_i, 0, 1)
         
         layout.addWidget(self.mfm2_readings_box)
         
@@ -1176,9 +1165,8 @@ class DebugPage(QWidget, Ui_DebugPage):
         m2_vals = data.get("mfm2_readings")
         if m2_vals is not None:
             v, i, pf = m2_vals
-            self.lbl_mfm2_val_v.setText(f"{v:.1f} V" if v is not None else "N/A")
-            self.lbl_mfm2_val_i.setText(f"{i:.3f} A")
-            self.lbl_mfm2_val_pf.setText(f"{pf:.2f}" if pf is not None else "N/A")
+            if hasattr(self, "lbl_mfm2_val_i"):
+                self.lbl_mfm2_val_i.setText(f"{i:.3f} A")
 
         # 6. Update PicoScope
         if hasattr(self, 'lbl_picoscope_led'):

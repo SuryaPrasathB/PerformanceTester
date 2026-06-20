@@ -293,10 +293,11 @@ class HardwareService(QObject):
             # Read current from drv_i
             i = 0.0
             if drv_i and drv_i.is_connected:
+                curr_addr = 40001 if drv_i == self.mfm2_drv else int(MFMRegister.CURRENT)
                 if hasattr(drv_i, "read_float"):
-                    i = drv_i.read_float(int(MFMRegister.CURRENT), function_code=MFM_FUNCTION_CODE, swapped=swap_i)
+                    i = drv_i.read_float(curr_addr, function_code=MFM_FUNCTION_CODE, swapped=swap_i)
                 else:
-                    i_data = drv_i.read_data(address=int(MFMRegister.CURRENT), count=1)
+                    i_data = drv_i.read_data(address=curr_addr, count=1)
                     i = i_data[0] if i_data else 0.0
 
             return {
@@ -324,10 +325,11 @@ class HardwareService(QObject):
         try:
             from core.hardware_mapping import MFMRegister, MFM_FUNCTION_CODE, MFM_REGISTER_TYPES
             swap_i = (MFM_REGISTER_TYPES.get("CURRENT", "SWAPPED_FLOAT") == "SWAPPED_FLOAT")
+            curr_addr = 40001 if drv_i == self.mfm2_drv else int(MFMRegister.CURRENT)
             if hasattr(drv_i, "read_float"):
-                return drv_i.read_float(int(MFMRegister.CURRENT), function_code=MFM_FUNCTION_CODE, swapped=swap_i)
+                return drv_i.read_float(curr_addr, function_code=MFM_FUNCTION_CODE, swapped=swap_i)
             else:
-                i_data = drv_i.read_data(address=int(MFMRegister.CURRENT), count=1)
+                i_data = drv_i.read_data(address=curr_addr, count=1)
                 return i_data[0] if i_data else 0.0
         except Exception as e:
             self.logger.error(f"Error reading MFM current: {e}")
