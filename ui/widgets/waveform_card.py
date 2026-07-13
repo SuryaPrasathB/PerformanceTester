@@ -129,7 +129,7 @@ class WaveformCard(QFrame):
         self.setFrameShape(QFrame.StyledPanel)
         self.setObjectName("WaveformCard")
         self.setFixedWidth(240)
-        self.setFixedHeight(230)
+        self.setMinimumHeight(220)
         
         # Premium styling
         self.setStyleSheet("""
@@ -155,21 +155,21 @@ class WaveformCard(QFrame):
         layout.setContentsMargins(10, 8, 10, 10)
         layout.setSpacing(6)
         
-        # Title bar layout
-        title_layout = QHBoxLayout()
+        # Title at the top left
         self.lbl_title = QLabel(name)
         self.lbl_title.setStyleSheet("font-weight: bold; color: #1E293B; font-size: 12px;")
-        title_layout.addWidget(self.lbl_title)
+        layout.addWidget(self.lbl_title)
         
-        if self.calculated_pf is not None:
-            self.lbl_pf = QLabel(f"PF: {self.calculated_pf:.2f}")
-            self.lbl_pf.setStyleSheet("font-weight: bold; color: #10B981; font-size: 11px;")
-            title_layout.addWidget(self.lbl_pf)
-            
-        layout.addLayout(title_layout)
-        
+        # Graph takes up the most space
         self.preview = WaveformPreview(data, self)
-        layout.addWidget(self.preview)
+        layout.addWidget(self.preview, stretch=1)
+        
+        # PF label below the graph
+        if self.calculated_pf is not None:
+            self.lbl_pf = QLabel(f"Calculated PF: {self.calculated_pf:.2f}")
+            self.lbl_pf.setStyleSheet("font-weight: bold; color: #10B981; font-size: 11px;")
+            self.lbl_pf.setAlignment(Qt.AlignCenter)
+            layout.addWidget(self.lbl_pf)
 
     def mousePressEvent(self, event):
         """Launches the detailed interactive expanded view dialog."""
@@ -192,11 +192,12 @@ class WaveformCard(QFrame):
         graph.setData(self.data, None, self.timebase, self.range_val, test_id=self.test_id)
         # Enable Auto-zoom by default for transient capture views
         graph.setAutoZoomEnabled(True)
-        main_layout.addWidget(graph)
+        main_layout.addWidget(graph, stretch=1)
         
         # Toolbar layout
         toolbar = QFrame(dialog)
-        toolbar.setStyleSheet("background-color: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 6px; padding: 6px;")
+        toolbar.setFixedHeight(48)
+        toolbar.setStyleSheet("background-color: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 6px; padding: 2px;")
         tb_layout = QHBoxLayout(toolbar)
         tb_layout.setContentsMargins(8, 4, 8, 4)
         tb_layout.setSpacing(15)

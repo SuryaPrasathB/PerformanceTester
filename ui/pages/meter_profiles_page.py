@@ -108,7 +108,7 @@ class MeterProfilesPage(QWidget):
         form_layout.addRow("Profile Name:", self.input_name)
 
         self.combo_mode = QComboBox()
-        self.combo_mode.addItems(["Serial", "DLMS"])
+        self.combo_mode.addItems(["Serial", "DLMS", "External"])
         self.combo_mode.currentTextChanged.connect(self._on_mode_changed)
         form_layout.addRow("Communication Mode:", self.combo_mode)
 
@@ -148,9 +148,13 @@ class MeterProfilesPage(QWidget):
         form_layout.addRow(self.serial_container)
 
         # Commands Section
+        self.cmds_container = QWidget()
+        cmds_layout = QFormLayout(self.cmds_container)
+        cmds_layout.setContentsMargins(0, 0, 0, 0)
+        
         cmds_label = QLabel("Command Mappings")
         cmds_label.setStyleSheet("color: #1E293B; font-size: 16px; font-weight: bold; border: none; border-bottom: 1px solid #E2E8F0; padding-top: 15px; padding-bottom: 8px; margin-bottom: 5px;")
-        form_layout.addRow(cmds_label)
+        cmds_layout.addRow(cmds_label)
 
         # Helpers for creating command rows
         self.cmd_inputs = {}
@@ -179,7 +183,7 @@ class MeterProfilesPage(QWidget):
             
             lbl = QLabel(f"{label_text}:")
             lbl.setFont(QFont("Segoe UI", 11, QFont.Bold))
-            form_layout.addRow(lbl, row_layout)
+            cmds_layout.addRow(lbl, row_layout)
             self.cmd_inputs[key] = {
                 "val_input": val_input, 
                 "val_fmt_btn": val_fmt_btn, 
@@ -191,6 +195,8 @@ class MeterProfilesPage(QWidget):
         add_command_row("unlock", "Unlock Command")
         add_command_row("close_load_switch", "Close Load Switch")
         add_command_row("open_load_switch", "Open Load Switch")
+        
+        form_layout.addRow(self.cmds_container)
 
         scroll_area.setWidget(scroll_content)
         right_layout.addWidget(scroll_area)
@@ -219,17 +225,21 @@ class MeterProfilesPage(QWidget):
 
     def _on_mode_changed(self, mode):
         is_dlms = (mode == "DLMS")
+        is_serial = (mode == "Serial")
+        is_external = (mode == "External")
+        
         self.dlms_container.setVisible(is_dlms)
-        self.serial_container.setVisible(not is_dlms)
+        self.serial_container.setVisible(is_serial)
+        self.cmds_container.setVisible(not is_external)
         
         for key, inputs in self.cmd_inputs.items():
-            inputs["val_fmt_btn"].setVisible(not is_dlms)
-            inputs["term_input"].setVisible(not is_dlms)
+            inputs["val_fmt_btn"].setVisible(is_serial)
+            inputs["term_input"].setVisible(is_serial)
             
             if is_dlms:
                 inputs["val_input"].setPlaceholderText("OBIS Code (e.g. 1.0.0.0.0.255)")
                 inputs["resp_input"].setPlaceholderText("Expected response (optional)")
-            else:
+            elif is_serial:
                 inputs["val_input"].setPlaceholderText("Command payload...")
                 inputs["resp_input"].setPlaceholderText("Expected response (HEX/ASCII)")
                 inputs["term_input"].setPlaceholderText("Terminator")
@@ -272,7 +282,7 @@ class MeterProfilesPage(QWidget):
         self.btn_delete.setEnabled(False)
         
         self.input_name.clear()
-        self.combo_mode.setCurrentText("DLMS")
+        self.combo_mode.setCurrentText("External")
         self.input_client_addr.setText("48")
         self.input_server_addr.setText("1")
         self.input_auth.setCurrentText("High")
@@ -306,7 +316,7 @@ class MeterProfilesPage(QWidget):
         self.btn_delete.setEnabled(True)
 
         self.input_name.setText(profile.get("name", ""))
-        self.combo_mode.setCurrentText(profile.get("communication_mode", "DLMS"))
+        self.combo_mode.setCurrentText(profile.get("communication_mode", "External"))
         
         dlms = profile.get("dlms_settings", {})
         self.input_client_addr.setText(str(dlms.get("client_address", "48")))

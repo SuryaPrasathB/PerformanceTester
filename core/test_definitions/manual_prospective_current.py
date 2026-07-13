@@ -10,6 +10,7 @@ class ManualProspectiveCurrentTest(BaseTest):
     """
     def build(self, builder: TestBuilder):
         # 1. Prompt User to set Load Vc, (2.5 / 3 / 4.5 / 6) kA, UPF
+        builder.stop_power_sequence(PLCCoil.CONTACTOR_120A_LOAD_BANK_COIL_ADDR)
         builder.prompt_user("Set Load Vc, (2.5 / 3 / 4.5 / 6) kA, UPF", requires_input=False)
         
         # Start Power Sequence (ACB -> Delay -> 120A Contactor, NO SCR)

@@ -9,8 +9,10 @@ class TestPage(QWidget, Ui_TestPage):
         self.device_manager = device_manager
         self.main_window = main_window # Reference to main window for logging/state
         self.test_runner = None
+        self.active_validation_rule = None
         
-        self._populate_meter_profiles()
+        self._setup_meter_profile_ui()
+        self.refresh_meter_profiles()
         self._populate_tests()
         self._connect_signals()
         
@@ -83,19 +85,36 @@ class TestPage(QWidget, Ui_TestPage):
         
         self.frame_cycles_container.hide()
         
+        # Smooth Cycle Progress
+        self.cycle_progress_anim = QPropertyAnimation(self.cycle_progress_bar, b"value")
+        self.cycle_progress_anim.setEasingCurve(QEasingCurve.Type.OutQuad)
+        
         # Insert into the vertical center layout right after the instructions card
         instr_idx = self.verticalLayout_center.indexOf(self.frame_instruction)
         self.verticalLayout_center.insertWidget(instr_idx + 1, self.frame_cycles_container)
+
+        # Dynamic validation error label
+        from PySide6.QtWidgets import QLabel
+        self.lbl_validation_error = QLabel("", self.frame_instruction)
+        self.lbl_validation_error.setObjectName("lbl_validation_error")
+        self.lbl_validation_error.setAlignment(Qt.AlignCenter)
+        self.lbl_validation_error.setStyleSheet("color: #EF4444; font-size: 14px; font-weight: bold; margin-top: 4px;")
+        self.lbl_validation_error.hide()
+        
+        # Insert error label right below the input layout (before progress_bar)
+        pbar_idx = self.verticalLayout_instr.indexOf(self.progress_bar)
+        self.verticalLayout_instr.insertWidget(pbar_idx, self.lbl_validation_error)
 
     def _connect_signals(self):
         self.btn_start.clicked.connect(self.start_test)
         self.btn_stop.clicked.connect(self.toggle_pause_resume)
         self.btn_abort.clicked.connect(self.cancel_test)
         self.btn_emergency.clicked.connect(self.main_window.trigger_emergency_stop)
-        self.input_instruction.returnPressed.connect(self.btn_done.click)
+        self.input_instruction.returnPressed.connect(self.handle_return_pressed)
+        self.input_instruction.textChanged.connect(self.validate_input)
         
-    def _populate_meter_profiles(self):
-        from PySide6.QtWidgets import QComboBox, QLabel
+    def _setup_meter_profile_ui(self):
+        from PySide6.QtWidgets import QComboBox, QLabel, QLineEdit
         from services.profile_manager import ProfileManager
         
         self.lbl_meter_profile = QLabel("Meter Profile", self.frame_sidebar)
@@ -103,18 +122,40 @@ class TestPage(QWidget, Ui_TestPage):
         
         self.cmb_meter_profile = QComboBox(self.frame_sidebar)
         
+        self.input_serial_number = QLineEdit(self.frame_sidebar)
+        self.input_serial_number.setPlaceholderText("Enter Meter Serial Number")
+        self.input_serial_number.setStyleSheet("min-height: 28px; padding: 4px 16px;")
+        
         self.verticalLayout_sidebar.insertWidget(0, self.lbl_meter_profile)
         self.verticalLayout_sidebar.insertWidget(1, self.cmb_meter_profile)
+        self.verticalLayout_sidebar.insertWidget(2, self.input_serial_number)
         
         self.profile_manager = ProfileManager()
+        self.cmb_meter_profile.currentIndexChanged.connect(self._on_meter_profile_changed)
+
+    def refresh_meter_profiles(self):
+        self.cmb_meter_profile.blockSignals(True)
+        # Store current text/name if possible to re-select it
+        current_name = self.cmb_meter_profile.currentText()
+        self.cmb_meter_profile.clear()
+        
         profiles = self.profile_manager.get_all_profiles()
         
         for profile in profiles:
             self.cmb_meter_profile.addItem(f"{profile.get('name')} ({profile.get('communication_mode')})", profile)
             
-        self.cmb_meter_profile.currentIndexChanged.connect(self._on_meter_profile_changed)
+        self.cmb_meter_profile.blockSignals(False)
+        
+        # Try to restore previous selection
+        index_to_select = 0
+        for i in range(self.cmb_meter_profile.count()):
+            if self.cmb_meter_profile.itemText(i) == current_name:
+                index_to_select = i
+                break
+                
         if self.cmb_meter_profile.count() > 0:
-            self._on_meter_profile_changed(self.cmb_meter_profile.currentIndex())
+            self.cmb_meter_profile.setCurrentIndex(index_to_select)
+            self._on_meter_profile_changed(index_to_select)
 
     @Slot(int)
     def _on_meter_profile_changed(self, index):
@@ -170,11 +211,19 @@ class TestPage(QWidget, Ui_TestPage):
             self.main_window.append_log("WARNING", "No test selected.")
             return
             
+        serial_number = self.input_serial_number.text().strip()
+        if not serial_number:
+            from PySide6.QtWidgets import QMessageBox
+            QMessageBox.warning(self, "Validation Error", "Please enter a Meter Serial Number before starting the test.")
+            return
+            
         test_class_name = selected_items[0].data(Qt.UserRole)
         
         from core.test_engine.test_context import TestContext
         from core.test_engine.test_runner import TestRunner
         context = TestContext(self.device_manager)
+        
+        context.meter_serial_number = serial_number
         
         selected_profile = self.cmb_meter_profile.currentData()
         if selected_profile:
@@ -327,6 +376,7 @@ class TestPage(QWidget, Ui_TestPage):
         self.input_instruction.hide()
         self.progress_bar.setValue(100)
         self.frame_cycles_container.hide()
+        self.cycle_progress_anim.stop()
         
         if not self.test_runner:
             is_dark = getattr(self.main_window, "current_theme", "light") == "dark"
@@ -386,6 +436,12 @@ class TestPage(QWidget, Ui_TestPage):
         self.lbl_instruction.setStyleSheet("") # Clear outcome color
         self.progress_anim.stop() # Freeze animation during user input
         
+        if self.cycle_progress_anim.state() == QPropertyAnimation.State.Running:
+            self.cycle_progress_anim.pause()
+            self._cycle_anim_paused = True
+        else:
+            self._cycle_anim_paused = False
+        
         is_dark = getattr(self.main_window, "current_theme", "light") == "dark"
         sec_color = "#EAB308" if is_dark else "#D97706" # Amber/Orange for alerts
         title_text = "USER INPUT REQUIRED" if requires_input else "ACTION REQUIRED"
@@ -435,12 +491,44 @@ class TestPage(QWidget, Ui_TestPage):
                 self.horizontalLayout_input.insertWidget(idx + 2, btn_u3)
                 
                 self.dynamic_buttons.extend([btn_u2, btn_u3])
+            elif "RUN G7" in message:
+                self.input_instruction.hide()
+                self.btn_done.hide()
+                
+                html_cat = f"""
+                <div align='center' style='line-height: 140%;'>
+                    <span style='font-size: 13px; color: {sec_color}; font-weight: bold; letter-spacing: 1.5px;'>{title_text}</span><br>
+                    <span style='font-size: 28px; color: {text_color}; font-weight: 800;'>{message}</span>
+                </div>
+                """
+                self.lbl_instruction.setText(html_cat)
+                
+                from PySide6.QtWidgets import QPushButton
+                btn_skip = QPushButton("Skip")
+                btn_skip.setMinimumSize(120, 45)
+                btn_skip.setStyleSheet("font-size: 16px; font-weight: bold; background-color: #94A3B8; color: white; border-radius: 8px;")
+                btn_skip.clicked.connect(lambda checked=False, val="Skip": self.resolve_user_action(val))
+                
+                btn_continue = QPushButton("Continue")
+                btn_continue.setMinimumSize(120, 45)
+                btn_continue.setStyleSheet("font-size: 16px; font-weight: bold; background-color: #3B82F6; color: white; border-radius: 8px;")
+                btn_continue.clicked.connect(lambda checked=False, val="Continue": self.resolve_user_action(val))
+                
+                idx = self.horizontalLayout_input.indexOf(self.btn_done)
+                self.horizontalLayout_input.insertWidget(idx + 1, btn_skip)
+                self.horizontalLayout_input.insertWidget(idx + 2, btn_continue)
+                
+                self.dynamic_buttons.extend([btn_skip, btn_continue])
             else:
                 self.input_instruction.show()
                 self.input_instruction.clear()
                 self.input_instruction.setEnabled(True)
                 self.btn_done.show()
                 self.btn_done.setEnabled(True)
+                
+                # Active validation setup
+                self.active_validation_rule = self.parse_validation_rules(message)
+                self.validate_input()
                 
                 try:
                     if self.btn_done.receivers(self.btn_done.clicked) > 0:
@@ -449,6 +537,9 @@ class TestPage(QWidget, Ui_TestPage):
                     pass
                 self.btn_done.clicked.connect(lambda: self.resolve_user_action())
         else:
+            self.active_validation_rule = None
+            self.lbl_validation_error.hide()
+            self.set_input_validation_style(True)
             self.input_instruction.hide()
             self.btn_done.show()
             self.btn_done.setEnabled(True)
@@ -464,6 +555,9 @@ class TestPage(QWidget, Ui_TestPage):
     def resolve_user_action(self, user_val=None):
         self.btn_done.hide()
         self.input_instruction.hide()
+        self.lbl_validation_error.hide()
+        self.set_input_validation_style(True)
+        self.active_validation_rule = None
         
         if hasattr(self, 'dynamic_buttons'):
             for btn in self.dynamic_buttons:
@@ -475,8 +569,138 @@ class TestPage(QWidget, Ui_TestPage):
             
         if self.progress_anim.state() == QPropertyAnimation.State.Paused:
             self.progress_anim.resume() # Resume the active step animation
+            
+        if getattr(self, '_cycle_anim_paused', False):
+            self.cycle_progress_anim.resume()
+            self._cycle_anim_paused = False
+            
         if self.test_runner:
             self.test_runner.resume_from_user(str(user_val))
+            
+    def handle_return_pressed(self):
+        if self.btn_done.isEnabled() and self.btn_done.isVisible():
+            self.btn_done.click()
+
+    def parse_validation_rules(self, message: str):
+        """Parses the message to extract validation rules."""
+        import re
+        message_lower = message.lower()
+        
+        # Look for range boundaries like "between 10-60 secs", "10 to 60", "10-60"
+        range_match = re.search(r'between\s+(\d+(?:\.\d+)?)\s*(?:-|to|and)\s*(\d+(?:\.\d+)?)', message, re.IGNORECASE)
+        if not range_match:
+            range_match = re.search(r'(\d+(?:\.\d+)?)\s*(?:-|to)\s*(\d+(?:\.\d+)?)', message, re.IGNORECASE)
+            
+        if range_match:
+            try:
+                min_val = float(range_match.group(1))
+                max_val = float(range_match.group(2))
+                return {
+                    "type": "range",
+                    "min": min(min_val, max_val),
+                    "max": max(min_val, max_val),
+                    "original_text": range_match.group(0)
+                }
+            except ValueError:
+                pass
+                
+        if any(keyword in message_lower for keyword in ["energy", "value", "current", "voltage", "resistance", "limit", "time", "secs"]):
+            if "serial number" not in message_lower:
+                return {"type": "numeric"}
+                
+        return {"type": "non_empty"}
+
+    @Slot()
+    def validate_input(self):
+        if not self.input_instruction.isVisible():
+            return
+            
+        text = self.input_instruction.text().strip()
+        rule = self.active_validation_rule
+        
+        if not rule:
+            self.set_input_validation_style(True)
+            self.lbl_validation_error.hide()
+            self.btn_done.setEnabled(True)
+            return
+
+        is_valid = True
+        error_msg = ""
+        
+        if not text:
+            is_valid = False
+            error_msg = "Input cannot be empty."
+            # Do not show red border/error immediately on empty state if it's the initial prompt state
+            self.set_input_validation_style(True)
+            self.lbl_validation_error.hide()
+            self.btn_done.setEnabled(False)
+            return
+        elif rule["type"] == "range":
+            try:
+                val = float(text)
+                if val < rule["min"] or val > rule["max"]:
+                    is_valid = False
+                    error_msg = f"Value must be between {rule['min']} and {rule['max']}."
+            except ValueError:
+                is_valid = False
+                error_msg = f"Please enter a valid number between {rule['min']} and {rule['max']}."
+        elif rule["type"] == "numeric":
+            try:
+                val = float(text)
+                if val < 0:
+                    is_valid = False
+                    error_msg = "Value must be a positive number."
+            except ValueError:
+                is_valid = False
+                error_msg = "Please enter a valid number."
+        elif rule["type"] == "non_empty":
+            if not text:
+                is_valid = False
+                error_msg = "Please enter a value."
+                
+        if is_valid:
+            self.set_input_validation_style(True)
+            self.lbl_validation_error.hide()
+            self.btn_done.setEnabled(True)
+        else:
+            self.set_input_validation_style(False)
+            self.lbl_validation_error.setText(f"⚠️ {error_msg}")
+            self.lbl_validation_error.show()
+            self.btn_done.setEnabled(False)
+            
+            # Show tooltip popup near input field
+            from PySide6.QtWidgets import QToolTip
+            from PySide6.QtCore import QPoint
+            tooltip_pos = self.input_instruction.mapToGlobal(QPoint(0, -self.input_instruction.height()))
+            QToolTip.showText(tooltip_pos, f"<span style='color: #EF4444; font-weight: bold;'>Validation Error:</span><br>{error_msg}", self.input_instruction)
+
+    def set_input_validation_style(self, is_valid: bool):
+        is_dark = getattr(self.main_window, "current_theme", "light") == "dark"
+        
+        if is_valid:
+            if self.input_instruction.text().strip():
+                border_color = "#10B981"
+                bg_color = "#ECFDF5" if not is_dark else "#062F21"
+            else:
+                border_color = "#6366F1" if is_dark else "#3B82F6"
+                bg_color = "#1E293B" if is_dark else "#FFFFFF"
+        else:
+            border_color = "#EF4444"
+            bg_color = "#FEF2F2" if not is_dark else "#451A1A"
+            
+        text_color = "#F8FAFC" if is_dark else "#0F172A"
+        
+        self.input_instruction.setStyleSheet(f"""
+            QLineEdit {{
+                border: 2px solid {border_color};
+                border-radius: 8px;
+                padding: 4px 16px;
+                font-size: 16px;
+                background-color: {bg_color};
+                color: {text_color};
+                min-height: 35px;
+            }}
+        """)
 
     @Slot(int, int, int)
     def smart_step_animate(self, start_val: int, end_val: int, duration_ms: int):
@@ -543,9 +767,20 @@ class TestPage(QWidget, Ui_TestPage):
         """Updates the active test cycle visualization panel."""
         if total > 0:
             self.frame_cycles_container.show()
-            self.lbl_cycle_counter.setText(f"Cycle {current} of {total}")
-            self.cycle_progress_bar.setRange(0, total)
-            self.cycle_progress_bar.setValue(current)
-            self.lbl_cycle_percentage.setText(f"{int((current / total) * 100)}%")
+            self.lbl_cycle_counter.setText(f"Cycle {current} of {total} (Running)")
+            self.cycle_progress_bar.setRange(0, 100)
+            
+            target_val = int((current / total) * 100)
+            
+            if self.cycle_progress_anim.state() == QPropertyAnimation.State.Running:
+                self.cycle_progress_anim.stop()
+                
+            self.cycle_progress_anim.setStartValue(self.cycle_progress_bar.value())
+            self.cycle_progress_anim.setEndValue(target_val)
+            self.cycle_progress_anim.setDuration(300) # 300ms smooth transition
+            self.cycle_progress_anim.start()
+            
+            self.lbl_cycle_percentage.setText(f"{target_val}%")
         else:
             self.frame_cycles_container.hide()
+            self.cycle_progress_anim.stop()

@@ -132,13 +132,28 @@ class TestBuilder:
         return self
         
     def set_plc_coil(self, coil: PLCCoil, state: bool):
+        friendly_names = {
+            "ACB_COIL_ADDR": "ACB",
+            "SCR_COIL_ADDR": "SCR",
+            "CONTACTOR_120A_LOAD_BANK_COIL_ADDR": "120A Contactor",
+            "CONTACTOR_100mA_LOAD_BANK_COIL_ADDR": "100mA Contactor",
+            "FCMC_TEST_START": "FCMC Test",
+            "SCCC_TEST_START": "SCCC Test",
+            "FCMCT_ACK": "FCMCT Ack",
+            "PRE_FUSING_MODE_COIL_ADDR": "Pre-Fusing Mode",
+            "FAULT_INDICATION_BUZZER_COIL_ADDR": "Fault Buzzer",
+            "INPUT_STATUS_REQUEST": "Input Status Request"
+        }
+        friendly_name = friendly_names.get(coil.name, coil.name)
+        action_verb = "Turning On" if state else "Turning Off"
+        
         def action(ctx, hw):
-            ctx.update_status(f"Setting PLC Coil 0x{coil.value:02X} ({coil.name}) to {state}")
+            ctx.update_status(f"{action_verb} {friendly_name}")
             try:
                 hw.plc.write_coil(coil.value, state)
             except AttributeError:
                 ctx.logger.info(f"MOCK: PLC.write_coil({coil.value}, {state})")
-        self.add_step(f"Set Coil {coil.name}={'ON' if state else 'OFF'}", action, device="PLC")
+        self.add_step(f"Turn {'ON' if state else 'OFF'} {friendly_name}", action, device="PLC")
         
         # Apply global delay whenever ACB is operated
         if coil == PLCCoil.ACB_COIL_ADDR:
@@ -217,10 +232,22 @@ class TestBuilder:
         return self
 
     def send_meter_command(self, command_key: str):
+        display_names = {
+            "close_load_switch": "Close Load Switch",
+            "open_load_switch": "Open Load Switch",
+            "unlock": "Unlock Meter",
+            "read_serial_number": "Read Serial Number"
+        }
+        step_name = display_names.get(command_key, f"Send Command: {command_key}")
+
         if command_key == "read_serial_number":
             def action(ctx, hw):
-                ctx.logger.info("Skipping meter command: read_serial_number (disabled per request)")
-            self.add_step("Skip Read Serial Number", action, device="Energy Meter")
+                ctx.logger.info("Prompting for Read Serial Number")
+                result = ctx.prompt_user_action("Please enter the Energy Meter Serial Number:", True)
+                if result:
+                    ctx.meter_serial_number = str(result)
+                    ctx.logger.info(f"Saved read serial number to context: {ctx.meter_serial_number}")
+            self.add_step(step_name, action, requires_input=True, details="Please enter the Energy Meter Serial Number:", device="Energy Meter")
             return self
 
         def action(ctx, hw):
@@ -233,6 +260,13 @@ class TestBuilder:
                     raise Exception("No meter profiles configured.")
                 profile = profiles[0] # Fallback
             
+            mode = profile.get("communication_mode", "DLMS").lower()
+            
+            if mode == "external":
+                ctx.logger.info(f"External mode: Prompting user for {step_name}")
+                ctx.prompt_user_action(f"Please execute '{step_name}' on the Energy Meter.", False)
+                return
+
             def execute_single_command(key: str, is_auto_unlock: bool = False):
                 cmd_data = profile.get("commands", {}).get(key)
                 if not cmd_data:
@@ -248,7 +282,6 @@ class TestBuilder:
                 
                 ctx.update_status(f"Sending Meter Command: {key}")
                 fmt = cmd_data.get("format", "Hex").lower()
-                mode = profile.get("communication_mode", "DLMS").lower()
                 
                 ctx.logger.info(f"Sending via {profile.get('communication_mode')}: {val} [{cmd_data.get('format')}]")
                 
@@ -296,7 +329,11 @@ class TestBuilder:
                                     response = drv.read_until(term, timeout=2.0)
                                     
                                     if not response:
-                                        raise Exception(f"Meter did not respond to '{key}' command within the timeout period.")
+                                        if getattr(drv, 'mock_mode', False) or hw.config.get("mock_mode", False):
+                                            ctx.logger.info(f"MOCK mode: No response received. Bypassing timeout for '{key}'.")
+                                            response = b"MOCK_DATA\r"
+                                        else:
+                                            raise Exception(f"Meter did not respond to '{key}' command within the timeout period.")
                                         
                                     ctx.logger.info(f"Received Response: {response.hex().upper() if fmt == 'hex' else response}")
                                     
@@ -310,8 +347,11 @@ class TestBuilder:
                                             ctx.logger.warning(f"Could not parse serial number: {e}")
                                             
                                     if exp_resp and exp_resp not in response:
-                                        ctx.logger.error(f"Expected response '{exp_resp.hex()}' not found in '{response.hex()}'")
-                                        raise Exception(f"Validation failed: Expected response not found for '{key}' command.")
+                                        if getattr(drv, 'mock_mode', False) or hw.config.get("mock_mode", False):
+                                            ctx.logger.info(f"MOCK mode: Expected response '{exp_resp.hex()}' not found. Bypassing validation.")
+                                        else:
+                                            ctx.logger.error(f"Expected response '{exp_resp.hex()}' not found in '{response.hex()}'")
+                                            raise Exception(f"Validation failed: Expected response not found for '{key}' command.")
                                     
                                     ctx.logger.info(f"Meter response for '{key}' validated successfully.")
                                     break # Success! Break out of retry loop.
@@ -344,8 +384,12 @@ class TestBuilder:
                         exp_resp = str(cmd_data.get("expected_response", "")).strip()
                         if exp_resp:
                             if str(res) != exp_resp:
-                                raise Exception(f"DLMS Validation failed: Expected '{exp_resp}', got '{res}'")
-                            ctx.logger.info("DLMS response validated successfully.")
+                                if getattr(drv, 'mock_mode', False) or hw.config.get("mock_mode", False):
+                                    ctx.logger.info(f"MOCK mode: DLMS expected '{exp_resp}' not matched. Bypassing validation.")
+                                else:
+                                    raise Exception(f"DLMS Validation failed: Expected '{exp_resp}', got '{res}'")
+                            else:
+                                ctx.logger.info("DLMS response validated successfully.")
                     else:
                         ctx.logger.error("Meter profile specifies DLMS, but driver is not DlmsDriver.")
                         raise Exception("Driver type mismatch.")
@@ -404,6 +448,56 @@ class TestBuilder:
         step_obj = ExecutableStep(f"Loop {count} times", action, weight=count*5, estimated_duration=count*2, device="System")
         step_obj.sub_steps = sub_steps_metadata
         self._steps.append(step_obj)
+        return self
+
+    def branch_on_condition(self, name: str, condition_func: Callable, true_builder_func: Callable, false_builder_func: Callable):
+        """ Evaluates a condition at runtime and executes one of two paths. """
+        dummy_builder_true = TestBuilder()
+        true_builder_func(dummy_builder_true)
+        dummy_builder_false = TestBuilder()
+        false_builder_func(dummy_builder_false)
+        
+        def action(ctx, hw):
+            min_duration = ctx.config.get("testing", {}).get("min_step_duration_s", 1.0)
+            if condition_func(ctx, hw):
+                ctx.logger.info(f"Branch '{name}': Condition TRUE.")
+                for step in dummy_builder_true._steps:
+                    self._execute_step(ctx, step, hw, min_duration)
+            else:
+                ctx.logger.info(f"Branch '{name}': Condition FALSE.")
+                for step in dummy_builder_false._steps:
+                    self._execute_step(ctx, step, hw, min_duration)
+                    
+        step_obj = ExecutableStep(name, action, weight=5, estimated_duration=2, device="System")
+        self._steps.append(step_obj)
+        return self
+
+    def wait_for_external_cycles(self, target_cycles: int, threshold_current: float = 0.5):
+        """ Dynamically tracks cycles by monitoring MFM current. """
+        def action(ctx, hw):
+            ctx.update_status(f"Monitoring external cycles: Target {target_cycles} (Threshold: {threshold_current}A)")
+            loop_id = id(action)
+            ctx.push_loop(loop_id, target_cycles)
+            try:
+                cycle_count = 0
+                state = "OPEN" # Start assuming switch is open
+                
+                while cycle_count < target_cycles:
+                    ctx.check_cancel()
+                    ctx.wait_if_paused()
+                    
+                    # Read current from MFM
+                    try:
+                        current = hw.read_mfm_current()
+                    except Exception as e:
+                        ctx.logger.warning(f"Failed to read current for cycle sync: {e}")
+                        current = 0.0
+                        
+                    time.sleep(0.5) # 500ms polling interval as requested
+            finally:
+                ctx.pop_loop()
+                
+        self.add_step(f"Wait for {target_cycles} External Cycles", action, weight=target_cycles*5, duration=target_cycles*5, device="System")
         return self
 
     def custom_action(self, name: str, action_func: Callable):

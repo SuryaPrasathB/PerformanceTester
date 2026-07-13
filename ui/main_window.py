@@ -28,7 +28,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.logs_page = LogsPage(self)
         self.settings_page = SettingsPage(device_manager, self)
         self.debug_page = DebugPage(device_manager, self)
-        self.reports_page = ReportsPage()
+        self.reports_page = ReportsPage(device_manager, self)
         self.sequence_viewer_page = SequenceViewerPage(device_manager, self)
         self.meter_profiles_page = MeterProfilesPage(self)
         self.settings_page = SettingsPage(device_manager, self)
@@ -154,6 +154,14 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         if hasattr(self, 'debug_page') and hasattr(self.debug_page, 'set_active'):
             self.debug_page.set_active(index == 3)
 
+        # Refresh meter profiles when returning to Test Dashboard
+        if index == 1 and hasattr(self, 'test_page') and hasattr(self.test_page, 'refresh_meter_profiles'):
+            self.test_page.refresh_meter_profiles()
+
+        # Refresh reports page when opening reports
+        if index == 4 and hasattr(self, 'reports_page') and hasattr(self.reports_page, 'load_data'):
+            self.reports_page.load_data()
+
     def _load_theme(self):
         theme_file = "dark_theme.qss" if self.current_theme == "dark" else "light_theme.qss"
         theme_path = os.path.join(os.path.dirname(__file__), "resources", "css", theme_file)
@@ -169,6 +177,10 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         # Update DebugPage styles on theme switch
         if hasattr(self, 'debug_page') and hasattr(self.debug_page, 'update_theme_styles'):
             self.debug_page.update_theme_styles()
+            
+        # Update ReportsPage styles on theme switch
+        if hasattr(self, 'reports_page') and hasattr(self.reports_page, 'update_styles'):
+            self.reports_page.update_styles()
 
     @Slot()
     def toggle_theme(self):

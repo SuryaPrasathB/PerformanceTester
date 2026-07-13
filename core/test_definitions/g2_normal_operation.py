@@ -15,13 +15,11 @@ class G2NormalOperationTest(BaseTest):
 
     def build(self, builder: TestBuilder):
         # 1. Prompt User to Set Load to 240V Ic UPF
+        builder.stop_power_sequence(PLCCoil.CONTACTOR_120A_LOAD_BANK_COIL_ADDR)
         builder.prompt_user("Set Load to 240V Ic UPF", requires_input=False)
         
         # 2-4. Turn ON ACB -> Delay -> Turn ON Contactor -> Turn ON SCR
         builder.start_power_sequence(PLCCoil.CONTACTOR_120A_LOAD_BANK_COIL_ADDR)
-        
-        # 5. Read Meter Serial Number
-        builder.send_meter_command("read_serial_number")
         
         # 6. Prompt user to enter initial Energy Value
         builder.prompt_user("Enter Initial Energy Value", requires_input=True, save_as="energy_initial")

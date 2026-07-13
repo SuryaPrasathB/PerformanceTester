@@ -5,40 +5,35 @@
       "type": "modbus",
       "ip": "192.168.0.123",
       "port": "502",
-      "mock": false
+      "mock": true
     },
     {
       "name": "EnergyMeter1",
       "type": "dlms",
       "port": "COM5",
       "baudrate": 9600,
-      "mock": false
+      "mock": true
     },
     {
       "name": "MFMMeter1",
       "type": "modbus",
-      "port": "COM6",
+      "port": "COM39",
       "baudrate": 9600,
       "bytesize": 8,
       "parity": "NONE",
       "stopbits": 1,
       "slave_id": 1,
-      "mock": false
+      "mock": true
     },
     {
       "name": "MFMMeter2",
       "type": "modbus",
-      "port": "COM6",
+      "port": "COM39",
       "baudrate": 9600,
       "bytesize": 8,
       "parity": "NONE",
       "stopbits": 1,
       "slave_id": 2,
-      "mock": false
-    },
-    {
-      "name": "PicoScope1",
-      "type": "picoscope",
       "mock": false
     }
   ],

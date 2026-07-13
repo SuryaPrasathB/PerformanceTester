@@ -41,7 +41,7 @@ class WaveformGraph(QWidget):
         # Default paddings
         self.pad_left = 65
         self.pad_top = 25
-        self.pad_right = 20
+        self.pad_right = 65
         self.pad_bottom = 45
         
         # View limits
@@ -49,6 +49,8 @@ class WaveformGraph(QWidget):
         self.view_end_time_ms = 0.0
         self.view_min_volt = -15.0
         self.view_max_volt = 15.0
+        self.view_min_curr = -15.0
+        self.view_max_curr = 15.0
         self.auto_zoom_enabled = False
         
         # Zoom selection rect coords
@@ -133,7 +135,7 @@ class WaveformGraph(QWidget):
             self.update()
 
     def reset_zoom(self):
-        """Resets viewport to show the entire waveform's horizontal range and full voltage scale."""
+        """Resets viewport to show the entire waveform's horizontal range and full voltage/current scale."""
         self.view_start_time_ms = 0.0
         self.view_end_time_ms = (len(self.data_a) * self.interval_ms) if self.data_a else 100.0
         
@@ -141,6 +143,12 @@ class WaveformGraph(QWidget):
         limit = max(15.0, max_val * 1.1)
         self.view_min_volt = -limit
         self.view_max_volt = limit
+        
+        if self.data_b:
+            max_c = max(abs(x) for x in self.data_b)
+            c_limit = max(1.0, max_c * 1.1)
+            self.view_min_curr = -c_limit
+            self.view_max_curr = c_limit
 
     def apply_auto_zoom(self):
         """Performs search to locate voltage dip or current surge and focuses the viewport."""
@@ -267,6 +275,19 @@ class WaveformGraph(QWidget):
         if self.view_max_volt > limit:
             self.view_max_volt = limit
             self.view_min_volt = limit - v_range
+            
+        if self.data_b:
+            max_c = max(abs(x) for x in self.data_b)
+            c_limit = max(1.0, max_c * 1.25)
+            c_range = self.view_max_curr - self.view_min_curr
+            if c_range > c_limit * 2: c_range = c_limit * 2
+            if c_range <= 0.5: c_range = 0.5
+            if self.view_min_curr < -c_limit:
+                self.view_min_curr = -c_limit
+                self.view_max_curr = -c_limit + c_range
+            if self.view_max_curr > c_limit:
+                self.view_max_curr = c_limit
+                self.view_min_curr = c_limit - c_range
 
     def is_cursors_moved(self) -> bool:
         """Helper checking if cursors have moved from defaults."""
@@ -312,10 +333,10 @@ class WaveformGraph(QWidget):
         
         # 4. Draw Waveform Data
         if self.data_a and len(self.data_a) > 1:
-            self.draw_waveform_path(painter, self.data_a, QColor("#1D4ED8"), graph_w, graph_h)
+            self.draw_waveform_path(painter, self.data_a, QColor("#1D4ED8"), graph_w, graph_h, is_current=False)
             
         if self.data_b and len(self.data_b) > 1:
-            self.draw_waveform_path(painter, self.data_b, QColor("#EF4444"), graph_w, graph_h)
+            self.draw_waveform_path(painter, self.data_b, QColor("#EF4444"), graph_w, graph_h, is_current=True)
             
         # 5. Draw Zoom Selection Rectangle
         if self.dragging_cursor == 10:
@@ -361,9 +382,17 @@ class WaveformGraph(QWidget):
         # Y Axis (Voltage / Current)
         for i in range(11):
             y = self.pad_top + i * (graph_h / 10.0)
+            
+            # Left Axis (Voltage)
             v = self.view_max_volt - (i * (self.view_max_volt - self.view_min_volt) / 10.0)
-            label = f"{v:.1f}V" if max(abs(self.view_max_volt), abs(self.view_min_volt)) < 100.0 else f"{v:.0f}A"
-            painter.drawText(QRect(5, y - 8, self.pad_left - 10, 16), Qt.AlignRight | Qt.AlignVCenter, label)
+            painter.setPen(QPen(QColor("#1D4ED8"))) # Blue for voltage
+            painter.drawText(QRect(5, y - 8, self.pad_left - 10, 16), Qt.AlignRight | Qt.AlignVCenter, f"{v:.1f}V" if max(abs(self.view_max_volt), abs(self.view_min_volt)) < 100.0 else f"{v:.0f}V")
+            
+            # Right Axis (Current)
+            if self.data_b:
+                c = self.view_max_curr - (i * (self.view_max_curr - self.view_min_curr) / 10.0)
+                painter.setPen(QPen(QColor("#EF4444"))) # Red for current
+                painter.drawText(QRect(w - self.pad_right + 5, y - 8, self.pad_right - 10, 16), Qt.AlignLeft | Qt.AlignVCenter, f"{c:.1f}A" if max(abs(self.view_max_curr), abs(self.view_min_curr)) < 100.0 else f"{c:.0f}A")
             
         # X Axis (Time)
         if self.data_a:
@@ -396,7 +425,7 @@ class WaveformGraph(QWidget):
         if self.calculated_pf is not None:
             self.draw_pf_badge(painter)
 
-    def draw_waveform_path(self, painter, dataset, color, graph_w, graph_h):
+    def draw_waveform_path(self, painter, dataset, color, graph_w, graph_h, is_current=False):
         """Paints a waveform series on the screen canvas."""
         pen = QPen(color, 1.8, Qt.SolidLine)
         painter.setPen(pen)
@@ -408,6 +437,11 @@ class WaveformGraph(QWidget):
         start_idx = max(0, int(self.view_start_time_ms / self.interval_ms))
         end_idx = min(len(dataset) - 1, int(self.view_end_time_ms / self.interval_ms))
         
+        v_min = self.view_min_curr if is_current else self.view_min_volt
+        v_max = self.view_max_curr if is_current else self.view_max_volt
+        span = v_max - v_min
+        if span == 0: span = 1.0
+        
         last_pt = None
         for i in range(start_idx, end_idx + 1):
             t_ms = i * self.interval_ms
@@ -417,7 +451,7 @@ class WaveformGraph(QWidget):
             
             # Map voltage/current value to vertical pixel
             val = dataset[i]
-            py = self.pad_top + graph_h - ((val - self.view_min_volt) / (self.view_max_volt - self.view_min_volt) * graph_h)
+            py = self.pad_top + graph_h - ((val - v_min) / span * graph_h)
             
             curr_pt = QPoint(int(px), int(py))
             if last_pt is not None:

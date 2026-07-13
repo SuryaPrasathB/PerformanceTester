@@ -33,6 +33,7 @@ class TestRunner(QThread):
         self.context._step_callback = self._handle_step_started
         self.context._cycle_callback = self._emit_cycle
         self.state_machine = StateMachine()
+        self.failure_reason = None
         
         self.step_ranges = {}
         self._initialize_progress_engine()
@@ -109,9 +110,12 @@ class TestRunner(QThread):
             # Save outcomes
             is_success = self.context.test_results.get("success", True)
             outcome = "PASS" if is_success else "FAIL"
+            if not is_success:
+                self.failure_reason = self.context.test_results.get("failure_reason", "Test verification check failed.")
 
         except Exception as e:
             # ERROR handling
+            self.failure_reason = str(e)
             if "cancelled" in str(e).lower() or self.context.cancel_event.is_set():
                 self.logger.warning(f"Test cancelled: {str(e)}")
                 outcome = "CANCELLED"
@@ -291,7 +295,25 @@ class TestRunner(QThread):
                 valid_columns = ['g2', 'g3', 'g5', 'g6', 'g7']
                 if test_type in valid_columns:
                     self.context.database_service.update_test_result(self.context.db_row_id, test_type, outcome)
+                
+                # Update overall results and failure reason
                 self.context.database_service.update_test_result(self.context.db_row_id, "overall_results", outcome)
+                if self.failure_reason:
+                    self.context.database_service.update_test_result(self.context.db_row_id, "failure_reason", self.failure_reason)
+                
+                # Check if a sub-test was active and failed
+                active_sub = self.context.get_runtime_value("active_sub_test")
+                if active_sub and outcome == "FAIL":
+                    self.context.database_service.save_test_run_detail(
+                        self.context.db_row_id, active_sub, "FAIL", self.failure_reason, is_sub_test=True
+                    )
+                    self.context.update_runtime_value("active_sub_test", None)
+
+                # Log this test run execution detail
+                self.context.database_service.save_test_run_detail(
+                    self.context.db_row_id, test_type, outcome, self.failure_reason, is_sub_test=False
+                )
+                
                 self.logger.info(f"Database record updated with final outcome: {outcome}")
         except Exception as e:
             self.logger.error(f"Error during database finalization: {e}")

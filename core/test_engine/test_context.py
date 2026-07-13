@@ -118,22 +118,7 @@ class TestContext:
         """
         Halts test execution and prompts the UI for user interaction.
         Returns the user's string input if requested.
-        
-        If executing inside a loop (iteration > 0), reuses inputs cached from the first iteration.
         """
-        if self.loop_stack:
-            current_loop = self.loop_stack[-1]
-            iteration = current_loop['iteration']
-            prompt_idx = current_loop['prompt_index']
-            
-            if iteration > 0:
-                cached_res = current_loop['prompts_history'].get(prompt_idx)
-                if cached_res is not None:
-                    self.logger.info(f"Loop iteration {iteration+1}: Skipping prompt '{instruction_text}' and using previous input: '{cached_res}'")
-                    current_loop['prompt_index'] += 1
-                    return cached_res
-                else:
-                    self.logger.warning(f"Loop iteration {iteration+1}: Expected cached prompt result at index {prompt_idx} but found none. Prompting user...")
 
         self.logger.info(f"WAITING FOR USER: {instruction_text}")
         
@@ -152,13 +137,6 @@ class TestContext:
             
         self.logger.info("USER ACTION COMPLETED/CONFIRMED.")
         result = self.user_input_result
-        
-        if self.loop_stack:
-            current_loop = self.loop_stack[-1]
-            if current_loop['iteration'] == 0:
-                current_loop['prompts_history'][current_loop['prompt_index']] = result
-            current_loop['prompt_index'] += 1
-            
         return result
 
     def update_status(self, message: str):

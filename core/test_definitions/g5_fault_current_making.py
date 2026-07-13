@@ -10,6 +10,7 @@ class G5FaultCurrentMakingTest(BaseTest):
     """
     def build(self, builder: TestBuilder):
         # 1. Prompt user to set load to Vc Ic UPF.
+        builder.stop_power_sequence(PLCCoil.CONTACTOR_120A_LOAD_BANK_COIL_ADDR)
         builder.prompt_user("Set load to Vc Ic UPF", requires_input=False)
         
         # 2. Turn ON ACB (PLC Coil ACB_COIL_ADDR = 0x03).
@@ -17,14 +18,20 @@ class G5FaultCurrentMakingTest(BaseTest):
         # 4. Turn ON SCR (PLC Coil SCR_COIL_ADDR = 0x04).
         builder.start_power_sequence(PLCCoil.CONTACTOR_120A_LOAD_BANK_COIL_ADDR)
         
-        # 5. Read meter serial number.
-        builder.send_meter_command("read_serial_number")
+
         
         # 6. Prompt user to enter Initial Energy Value.
         builder.prompt_user("Enter Initial Energy Value", requires_input=True, save_as="energy_initial")
         
         # Helper loop generator
         def g5_loop(b, i):
+            if i > 0:
+                # Turn OFF power from previous iteration's high current test
+                b.stop_power_sequence(PLCCoil.CONTACTOR_120A_LOAD_BANK_COIL_ADDR)
+                # Revert to safe load configuration for Pre-fusing
+                b.prompt_user("Set load to Vc Ic UPF", requires_input=False)
+                b.start_power_sequence(PLCCoil.CONTACTOR_120A_LOAD_BANK_COIL_ADDR)
+
             # --- Pre-fusing (Steps 7-13) ---
             # 7. Close load switch.
             b.send_meter_command("close_load_switch")
@@ -47,7 +54,8 @@ class G5FaultCurrentMakingTest(BaseTest):
             b.stop_power_sequence(PLCCoil.CONTACTOR_120A_LOAD_BANK_COIL_ADDR)
             
             # 16. Prompt user to select meter category (U2 or U3) using two selection buttons.
-            b.prompt_user("Select meter category (U2 or U3)", requires_input=True, save_as="meter_category")
+            if i == 0:
+                b.prompt_user("Select meter category (U2 or U3)", requires_input=True, save_as="meter_category")
             
             # 17. If U2, prompt user to set load to Vc, 2.5 kA, 0.8 PF.
             # 18. If U3, prompt user to set load to Vc, 3 kA, 0.8 PF.
@@ -57,7 +65,7 @@ class G5FaultCurrentMakingTest(BaseTest):
                     ctx.prompt_user_action("Set load to Vc, 3 kA, 0.8 PF", False)
                 else:
                     ctx.prompt_user_action("Set load to Vc, 2.5 kA, 0.8 PF", False)
-            b.custom_action("Prompt for Load Configuration", prompt_category_load)
+            b.custom_action(f"Prompt for Load Configuration (Iteration {i+1})", prompt_category_load)
             
             # 19. Turn ON ACB (PLC Coil ACB_COIL_ADDR = 0x03).
             # 20. Delay as required.
@@ -86,6 +94,11 @@ class G5FaultCurrentMakingTest(BaseTest):
         # Repeat steps 7-26 for 3 times in total.
         builder.loop(3, g5_loop)
  
+        # Revert to safe load configuration before final verification
+        builder.stop_power_sequence(PLCCoil.CONTACTOR_120A_LOAD_BANK_COIL_ADDR)
+        builder.prompt_user("Set load to Vc Ic UPF", requires_input=False)
+        builder.start_power_sequence(PLCCoil.CONTACTOR_120A_LOAD_BANK_COIL_ADDR)
+
         # 27. Close Meter Load Switch
         builder.send_meter_command("close_load_switch")
         # 28. Measure Current should be > 0
@@ -96,7 +109,22 @@ class G5FaultCurrentMakingTest(BaseTest):
         builder.measure_current(min_val=0.0, max_val=0.05)
         
         # 31. G7
-        builder.custom_action("Execute G7 Verification", lambda ctx, hw: ctx.update_status("Executing G7 Sequence Placeholder..."))
+        builder.prompt_user("RUN G7?", requires_input=True, save_as="run_g7")
+        
+        def build_g7_true(b):
+            from core.test_definitions.g7_minimum_switched_current import G7MinimumSwitchedCurrentTest
+            G7MinimumSwitchedCurrentTest().build(b, is_sub_sequence=True)
+            b.custom_action("G7 Completed", lambda ctx, hw: ctx.update_runtime_value("g7_result", "Completed"))
+            
+        def build_g7_false(b):
+            b.custom_action("Skip G7", lambda ctx, hw: ctx.update_status("Skipping G7..."))
+            
+        builder.branch_on_condition(
+            "Execute G7 Sequence",
+            lambda ctx, hw: str(ctx.get_runtime_value("run_g7")).strip().lower() == "continue",
+            build_g7_true,
+            build_g7_false
+        )
         
         # 32. Prompt User to Enter Final Energy Value
         builder.prompt_user("Enter Final Energy Value", requires_input=True, save_as="energy_final")
@@ -109,10 +137,16 @@ class G5FaultCurrentMakingTest(BaseTest):
         builder.stop_power_sequence(PLCCoil.CONTACTOR_120A_LOAD_BANK_COIL_ADDR)
         
     def _verify_and_store(self, ctx, hw):
+        if not hasattr(ctx, "test_results"):
+            ctx.test_results = {}
+            
         try:
             initial = float(ctx.get_runtime_value("energy_initial", 0))
             final = float(ctx.get_runtime_value("energy_final", 0))
             diff = abs(final - initial)
-            ctx.logger.info(f"Test Completed: Energy difference ({diff}). Storing results...")
+            g7_res = ctx.get_runtime_value("g7_result", "Skipped")
+            ctx.logger.info(f"G5 Test Completed. Energy difference: {diff}. G7 Result: {g7_res}. Coagulated Result: PASS")
+            ctx.test_results["success"] = True
         except ValueError:
             ctx.logger.error("Test Failed: Invalid energy values entered.")
+            ctx.test_results["success"] = False

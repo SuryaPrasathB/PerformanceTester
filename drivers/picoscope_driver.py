@@ -251,21 +251,26 @@ class PicoScopeDriver(BaseDriver):
         return []
 
     def _generate_mock_surge(self) -> list:
-        """Generates a realistic 50Hz mains voltage and decaying short circuit current surge transient."""
+        """Generates a realistic 50Hz mains voltage and phase-cut current waveform."""
         self.logger.debug("[MOCK] Generating transient current surge waveform.")
         voltage_data = []
         current_data = []
+        import math
+        import random
+        
         f = 50.0  # 50 Hz
-        peak_current = 4500.0  # Peak Current in Amperes
-        peak_voltage = 12.0 # Peak Voltage in Volts
+        peak_current = 15.0  # Peak Current in Amperes
+        peak_voltage = 230.0 * 1.414 # Peak Voltage in Volts
         
         # 2500 samples at 81.92 us interval -> ~204.8 ms total duration
         interval_s = 0.00008192
         
-        # Short circuit timing: starts at ~25ms, ends at ~36.5ms (11.5ms duration)
-        sc_start = 0.025
-        pulse_duration = 0.0115
-        sc_end = sc_start + pulse_duration
+        # We need a varying PF for each mock capture.
+        # Pick a random pulse duration between 5.0ms and 10.0ms.
+        # UPF = 10ms (no cut).
+        duration_ms = random.choice([5.0, 6.5, 8.0, 9.0, 10.0])
+        cut_ms = 10.0 - duration_ms
+        cut_s = cut_ms / 1000.0
         
         for i in range(self.no_of_values):
             t = i * interval_s
@@ -274,23 +279,18 @@ class PicoScopeDriver(BaseDriver):
             val_v = peak_voltage * math.sin(2 * math.pi * f * t)
             voltage_data.append(val_v)
             
-            # AC sine wave component for current
-            ac = peak_current * math.sin(2 * math.pi * f * t)
+            # Channel B: Current (phase cut sine wave)
+            # Find time within current half cycle
+            half_cycle_t = t % 0.010
             
-            # Decaying DC offset (asymmetrical short circuit transient)
-            dc = peak_current * 0.7 * math.exp(-t / 0.012)
-            
-            val_i = ac + dc
-            
-            # Simulate contact opening and closing
-            if sc_start <= t <= sc_end:
-                # Smooth transients at boundaries
-                fade_in = min(1.0, (t - sc_start) / 0.001)
-                fade_out = min(1.0, (sc_end - t) / 0.001)
-                current = val_i * fade_in * fade_out
+            if half_cycle_t < cut_s:
+                # Flatline (with minor noise)
+                current = random.uniform(-0.1, 0.1)
             else:
-                # Add background noise (leakage current)
-                current = random.uniform(-3.0, 3.0)
+                # Conduction (sine wave)
+                current = peak_current * math.sin(2 * math.pi * f * t)
+                # Add minor background noise
+                current += random.uniform(-0.3, 0.3)
                 
             current_data.append(current)
             
