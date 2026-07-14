@@ -246,6 +246,7 @@ class ReportsPage(QWidget):
         
     def create_card(self, title: str, value: str, color_hex: str) -> QFrame:
         card = QFrame(self)
+        card.setObjectName("metric_card")
         layout = QVBoxLayout(card)
         layout.setContentsMargins(15, 12, 15, 12)
         layout.setSpacing(4)
@@ -282,10 +283,14 @@ class ReportsPage(QWidget):
         """)
         
         card_style = f"""
-            QFrame {{
+            QFrame#metric_card {{
                 background-color: {bg};
                 border: 1px solid {border};
                 border-radius: 8px;
+            }}
+            QFrame#metric_card QLabel {{
+                border: none;
+                background-color: transparent;
             }}
         """
         self.card_total.setStyleSheet(card_style)

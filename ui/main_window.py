@@ -2,7 +2,7 @@ import os
 import sys
 from PySide6.QtWidgets import QMainWindow, QGraphicsOpacityEffect
 from PySide6.QtCore import Slot, Qt, QPropertyAnimation, QEasingCurve, QParallelAnimationGroup, QTimer
-from PySide6.QtGui import QColor
+from PySide6.QtGui import QColor, QIcon
 
 from ui.ui_main_window import Ui_MainWindow
 from ui.pages.test_page import TestPage
@@ -19,7 +19,18 @@ class MainWindow(QMainWindow, Ui_MainWindow):
     """
     def __init__(self, device_manager):
         super().__init__()
+        
+        # Configure Windows taskbar icon grouping
+        if sys.platform == 'win32':
+            try:
+                import ctypes
+                ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("delhitesthouse.properf.1.0")
+            except Exception as e:
+                print(f"Failed to set AppUserModelID: {e}")
+                
         self.setupUi(self)
+        self.setWindowIcon(QIcon(os.path.join(os.path.dirname(__file__), "resources", "icons", "app_icon.png")))
+        
         self.device_manager = device_manager
         self.current_theme = "light"
         
@@ -146,6 +157,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.stacked_widget.setCurrentIndex(index)
         self.lbl_page_title.setText(title)
         
+        self._highlight_nav_item(index)
+        
         # Requirement: Collapse sidebar on page change
         if self.sidebar_expanded:
             self._animate_sidebar(False)
@@ -162,9 +175,35 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         if index == 4 and hasattr(self, 'reports_page') and hasattr(self.reports_page, 'load_data'):
             self.reports_page.load_data()
 
+    def _highlight_nav_item(self, index):
+        nav_map = {
+            1: self.nav_item_test,
+            2: self.nav_item_logs,
+            3: self.nav_item_debug,
+            4: self.nav_item_reports,
+            5: getattr(self, 'nav_item_config', None),
+            6: self.nav_item_profiles,
+            7: self.nav_item_settings
+        }
+        
+        for idx, nav_item in nav_map.items():
+            if not nav_item:
+                continue
+            is_dark = self.current_theme == "dark"
+            highlight_bg = "rgba(255, 255, 255, 0.1)" if is_dark else "rgba(0, 0, 0, 0.08)"
+            hover_bg = "rgba(255, 255, 255, 0.05)" if is_dark else "rgba(0, 0, 0, 0.04)"
+            
+            if idx == index:
+                nav_item.setStyleSheet(
+                    f"QFrame {{ background-color: {highlight_bg}; border-left: 4px solid #3b82f6; border-radius: 4px; }}"
+                )
+            else:
+                nav_item.setStyleSheet(
+                    f"QFrame:hover {{ background-color: {hover_bg}; border-radius: 8px; }}"
+                )
+
     def _load_theme(self):
-        theme_file = "dark_theme.qss" if self.current_theme == "dark" else "light_theme.qss"
-        theme_path = os.path.join(os.path.dirname(__file__), "resources", "css", theme_file)
+        theme_path = os.path.join(os.path.dirname(__file__), "resources", "css", "light_theme.qss")
         try:
             with open(theme_path, "r") as f:
                 self.setStyleSheet(f.read())
@@ -182,10 +221,12 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         if hasattr(self, 'reports_page') and hasattr(self.reports_page, 'update_styles'):
             self.reports_page.update_styles()
 
+        # Re-apply highlight so it's not overridden by global QSS
+        self._highlight_nav_item(self.stacked_widget.currentIndex())
+
     @Slot()
     def toggle_theme(self):
-        self.current_theme = "light" if self.current_theme == "dark" else "dark"
-        self._load_theme()
+        pass
 
     @Slot(str, str)
     def append_log(self, level: str, message: str):
@@ -305,16 +346,19 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.btn_sidebar_toggle.setIconSize(QSize(32, 32))
         self.btn_sidebar_toggle.setText("")
         
-        self.btn_sidebar_toggle.setStyleSheet("""
-            QPushButton {
+        is_dark = self.current_theme == "dark"
+        hover_bg = "rgba(255, 255, 255, 0.05)" if is_dark else "rgba(0, 0, 0, 0.04)"
+
+        self.btn_sidebar_toggle.setStyleSheet(f"""
+            QPushButton {{
                 background-color: transparent;
                 border: none;
                 text-align: center;
-            }
-            QPushButton:hover {
-                background-color: rgba(255, 255, 255, 0.05);
+            }}
+            QPushButton:hover {{
+                background-color: {hover_bg};
                 border-radius: 8px;
-            }
+            }}
         """)
 
         buttons = [
@@ -347,7 +391,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                     padding: 0px;
                 }}
                 QPushButton:hover {{
-                    background-color: rgba(255, 255, 255, 0.05);
+                    background-color: {hover_bg};
                     border-radius: 8px;
                 }}
             """)

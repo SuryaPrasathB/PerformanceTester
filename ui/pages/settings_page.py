@@ -10,7 +10,7 @@ class SettingsPage(QWidget, Ui_SettingsPage):
         self.device_manager = device_manager
         self.main_window = main_window
         
-        self.btn_toggle_theme.clicked.connect(self.main_window.toggle_theme)
+        self.frame_appearance.hide()
         self.btn_connect_all.clicked.connect(self.device_manager.connect_all)
         self._init_hw_config_ui()
     def _init_hw_config_ui(self):

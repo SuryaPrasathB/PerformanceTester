@@ -5,7 +5,7 @@
     outline: none;
 }
 
-QMainWindow {
+QMainWindow, QWidget#centralwidget {
     background-color: #0F172A; /* Slate 900 */
     color: #F8FAFC;
 }
@@ -26,10 +26,10 @@ QFrame#frame_header, QFrame#frame_sidebar, QFrame#frame_instruction, QFrame#fram
 }
 
 QFrame#frame_sidebar {
-    background-color: #0F172A;
+    background-color: #5A5A5A; /* Rich deep navy-black for distinct sidebar background */
     border-radius: 0px;
     border: none;
-    border-right: 1px solid #334155;
+    border-right: 1px solid #1E293B;
 }
 
 /* -------------------------------------

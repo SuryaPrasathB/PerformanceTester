@@ -3,13 +3,22 @@ import os
 import subprocess
 import time
 
-# Add project root to path
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+# Add project root to path (handle frozen PyInstaller environment vs normal script execution)
+if getattr(sys, 'frozen', False):
+    # In PyInstaller, main.py is placed at the root of the temporary bundle folder
+    project_root = os.path.dirname(__file__)
+else:
+    # During development, main.py is in the 'app/' directory
+    project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
 
 def sync_ui():
     """Automatically re-compiles all .ui files in the project."""
     import glob
-    ui_files = glob.glob(os.path.join("**", "*.ui"), recursive=True)
+    ui_files = [f for f in glob.glob(os.path.join("**", "*.ui"), recursive=True)
+                if not f.startswith("dist" + os.sep) and not f.startswith("build" + os.sep)]
     
     for ui_path in ui_files:
         # Determine output path: same dir as .ui, but named ui_*.py
@@ -24,9 +33,18 @@ def sync_ui():
                     subprocess.run(["pyside6-uic", ui_path, "-o", py_path], check=True)
                 except Exception as e:
                     print(f"Failed to sync {filename}: {e}")
-sync_ui()
+if not getattr(sys, 'frozen', False):
+    sync_ui()
 
-from app.launcher import Launcher
+try:
+    from app.launcher import Launcher
+except ModuleNotFoundError:
+    try:
+        from launcher import Launcher
+    except ModuleNotFoundError:
+        # Fallback to absolute path lookup if needed
+        sys.path.insert(0, os.path.dirname(__file__))
+        from launcher import Launcher
 
 def main():
     """Entry point for the application."""

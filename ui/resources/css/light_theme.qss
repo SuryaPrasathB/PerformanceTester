@@ -5,7 +5,7 @@
     outline: none;
 }
 
-QMainWindow {
+QMainWindow, QWidget#centralwidget {
     background-color: #F8FAFC; /* Slate 50 */
     color: #0F172A;
 }
@@ -42,7 +42,7 @@ QFrame#frame_header, QFrame#frame_sidebar, QFrame#frame_instruction, QFrame#fram
 }
 
 QFrame#frame_sidebar {
-    background-color: #F8FAFC;
+    background-color: #F1F5F9; /* Slate 100 - Distinct light gray sidebar background */
     border-radius: 0px;
     border: none;
     border-right: 1px solid #E2E8F0;
@@ -178,6 +178,12 @@ QTextEdit {
     font-family: "Cascadia Code", "Consolas", monospace;
     color: #334155;
     line-height: 1.5;
+}
+
+QTextEdit#txt_logs {
+    background-color: #F8FAFC; /* Slate 50 - Light background for logs */
+    color: #0F172A;            /* Slate 900 - Dark text for logs */
+    border: 1px solid #E2E8F0;
 }
 
 QListWidget::item, QTableWidget::item {

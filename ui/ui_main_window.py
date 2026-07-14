@@ -150,6 +150,7 @@ class Ui_MainWindow(object):
 
         self.hLayout_config.addWidget(self.lbl_nav_config)
 
+
         self.verticalLayout_sidebar.addWidget(self.nav_item_config)
 
         self.spacer_sidebar = QSpacerItem(0, 0, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
@@ -235,7 +236,7 @@ class Ui_MainWindow(object):
     # setupUi
 
     def retranslateUi(self, MainWindow):
-        MainWindow.setWindowTitle(QCoreApplication.translate("MainWindow", u"Performance Tester", None))
+        MainWindow.setWindowTitle(QCoreApplication.translate("MainWindow", u"Pro-Perf", None))
         self.btn_sidebar_toggle.setText(QCoreApplication.translate("MainWindow", u"\u2630", None))
         self.btn_nav_test.setText("")
         self.lbl_nav_test.setText(QCoreApplication.translate("MainWindow", u"Test Dashboard", None))

@@ -8,10 +8,14 @@ class ProfileManager:
     Manages Meter Profiles stored in configs/meter_profiles.json.
     """
     def __init__(self, config_path=None):
+        import sys
         self.logger = logging.getLogger("ProfileManager")
         if not config_path:
-            base_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
-            self.config_path = os.path.join(base_dir, "configs", "meter_profiles.json")
+            if getattr(sys, 'frozen', False):
+                self.config_path = os.path.join(os.path.dirname(sys.executable), "configs", "meter_profiles.json")
+            else:
+                base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+                self.config_path = os.path.join(base_dir, "configs", "meter_profiles.json")
         else:
             self.config_path = config_path
             

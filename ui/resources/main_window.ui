@@ -11,7 +11,7 @@
    </rect>
   </property>
   <property name="windowTitle">
-   <string>Performance Tester</string>
+   <string>Pro-Perf</string>
   </property>
   <widget class="QWidget" name="centralwidget">
    <layout class="QHBoxLayout" name="horizontalLayout_root">
@@ -172,6 +172,30 @@
           <item>
            <widget class="QLabel" name="lbl_nav_reports">
             <property name="text"><string>Reports</string></property>
+           </widget>
+          </item>
+         </layout>
+        </widget>
+       </item>
+
+       <item>
+        <widget class="QFrame" name="nav_item_config">
+         <layout class="QHBoxLayout" name="hLayout_config">
+          <property name="spacing"><number>10</number></property>
+          <property name="leftMargin"><number>10</number></property>
+          <property name="topMargin"><number>0</number></property>
+          <property name="rightMargin"><number>0</number></property>
+          <property name="bottomMargin"><number>0</number></property>
+          <item>
+           <widget class="QPushButton" name="btn_nav_config">
+            <property name="minimumSize"><size><width>50</width><height>50</height></size></property>
+            <property name="maximumSize"><size><width>50</width><height>50</height></size></property>
+            <property name="text"><string></string></property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QLabel" name="lbl_nav_config">
+            <property name="text"><string>Test Config</string></property>
            </widget>
           </item>
          </layout>

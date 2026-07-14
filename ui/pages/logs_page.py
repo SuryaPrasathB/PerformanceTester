@@ -10,16 +10,12 @@ class LogsPage(QWidget, Ui_LogsPage):
 
     @Slot(str, str)
     def append_log(self, level: str, message: str):
-        # High contrast colors
-        theme = self.main_window.current_theme
-        if theme == "dark":
-            color = "#FFFFFF" 
-            if level == "ERROR": color = "#F87171"
-            elif level == "WARNING": color = "#FBBF24"
-        else:
-            color = "#000000" 
-            if level == "ERROR": color = "#DC2626"
-            elif level == "WARNING": color = "#D97706"
+        # High contrast colors on light background
+        color = "#0F172A" 
+        if level == "ERROR": 
+            color = "#DC2626"
+        elif level == "WARNING": 
+            color = "#D97706"
             
         html_msg = f'<span style="color:{color};">{message}</span><br>'
         self.txt_logs.insertHtml(html_msg)

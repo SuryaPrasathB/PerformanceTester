@@ -3,7 +3,11 @@ import os
 from enum import IntEnum
 
 # Default paths
-CONFIG_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+import sys
+if getattr(sys, 'frozen', False):
+    CONFIG_DIR = os.path.dirname(sys.executable)
+else:
+    CONFIG_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MODBUS_CONFIG_PATH = os.path.join(CONFIG_DIR, "configs", "modbus_config.json")
 
 # Default values to fallback on if loading fails or file doesn't exist

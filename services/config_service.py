@@ -6,8 +6,15 @@ class ConfigService:
     """
     ConfigService handles loading configuration data from JSON files.
     """
-    def __init__(self, config_path: str = "configs/device_config.json"):
-        self.config_path = config_path
+    def __init__(self, config_path: str = None):
+        import sys
+        if config_path is None:
+            if getattr(sys, 'frozen', False):
+                self.config_path = os.path.join(os.path.dirname(sys.executable), "configs", "device_config.json")
+            else:
+                self.config_path = "configs/device_config.json"
+        else:
+            self.config_path = config_path
         self._config_data: Dict[str, Any] = {}
 
     def load_config(self) -> Dict[str, Any]:
