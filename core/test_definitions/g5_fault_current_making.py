@@ -15,9 +15,6 @@ class G5FaultCurrentMakingTest(BaseTest):
         
         # 2. Turn ON ACB (PLC Coil ACB_COIL_ADDR = 0x03).
         # 3. Delay as required.
-        # 4. Turn ON SCR (PLC Coil SCR_COIL_ADDR = 0x04).
-        builder.start_power_sequence(PLCCoil.CONTACTOR_120A_LOAD_BANK_COIL_ADDR)
-        
 
         
         # 6. Prompt user to enter Initial Energy Value.
@@ -30,7 +27,6 @@ class G5FaultCurrentMakingTest(BaseTest):
                 b.stop_power_sequence(PLCCoil.CONTACTOR_120A_LOAD_BANK_COIL_ADDR)
                 # Revert to safe load configuration for Pre-fusing
                 b.prompt_user("Set load to Vc Ic UPF", requires_input=False)
-                b.start_power_sequence(PLCCoil.CONTACTOR_120A_LOAD_BANK_COIL_ADDR)
 
             # --- Pre-fusing (Steps 7-13) ---
             # 7. Close load switch.
@@ -49,8 +45,7 @@ class G5FaultCurrentMakingTest(BaseTest):
             # Measure current already logs errors, we proceed for now.
             b.custom_action("Validate Pre-fusing Result", lambda ctx, hw: ctx.logger.info("Pre-fusing validated."))
             
-            # 14. Turn OFF ACB.
-            # 15. Turn OFF SCR.
+            # 14. Turn OFF ACB and Contactor.
             b.stop_power_sequence(PLCCoil.CONTACTOR_120A_LOAD_BANK_COIL_ADDR)
             
             # 16. Prompt user to select meter category (U2 or U3) using two selection buttons.
@@ -69,8 +64,8 @@ class G5FaultCurrentMakingTest(BaseTest):
             
             # 19. Turn ON ACB (PLC Coil ACB_COIL_ADDR = 0x03).
             # 20. Delay as required.
-            # 21. Turn ON SCR (PLC Coil SCR_COIL_ADDR = 0x04).
-            b.start_power_sequence(PLCCoil.CONTACTOR_120A_LOAD_BANK_COIL_ADDR)
+            # 21. Turn ON SCR for high current test.
+            b.set_plc_coil(PLCCoil.SCR_COIL_ADDR, True)  # SCR required for high current (>120A)
             
             # 22. Notify PLC that the test is starting (FCMC_TEST_START = 0x00).
             b.set_plc_coil(PLCCoil.FCMC_TEST_START, True)
@@ -97,7 +92,6 @@ class G5FaultCurrentMakingTest(BaseTest):
         # Revert to safe load configuration before final verification
         builder.stop_power_sequence(PLCCoil.CONTACTOR_120A_LOAD_BANK_COIL_ADDR)
         builder.prompt_user("Set load to Vc Ic UPF", requires_input=False)
-        builder.start_power_sequence(PLCCoil.CONTACTOR_120A_LOAD_BANK_COIL_ADDR)
 
         # 27. Close Meter Load Switch
         builder.send_meter_command("close_load_switch")
@@ -132,8 +126,7 @@ class G5FaultCurrentMakingTest(BaseTest):
         # 33. Validate, Showcase and store results
         builder.custom_action("Verify Energy Difference & Store Results", self._verify_and_store)
         
-        # 34. Turn OFF ACB
-        # 35. Turn OFF SCR
+        # 34. Turn OFF ACB and Contactor
         builder.stop_power_sequence(PLCCoil.CONTACTOR_120A_LOAD_BANK_COIL_ADDR)
         
     def _verify_and_store(self, ctx, hw):

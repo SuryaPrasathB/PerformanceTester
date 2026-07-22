@@ -190,7 +190,6 @@ class TestBuilder:
             self.verify_plc_coil_status(PLCCoil.CONTACTOR_120A_STATUS, "120A Contactor")
         else:
             self.verify_plc_coil_status(PLCCoil.CONTACTOR_100mA_STATUS, "100mA Contactor")
-        self.set_plc_coil(PLCCoil.SCR_COIL_ADDR, True)
         return self
 
     def stop_power_sequence(self, contactor_coil: PLCCoil = PLCCoil.CONTACTOR_120A_LOAD_BANK_COIL_ADDR):
@@ -408,16 +407,40 @@ class TestBuilder:
 
     def measure_current(self, min_val: float, max_val: float):
         def action(ctx, hw):
+            import time
             ctx.update_status("Measuring Current (MFM)...")
-            try:
-                # Mock read for now
-                current = 10.0 # Dummy value
-                if current < min_val or current > max_val:
-                    ctx.logger.error(f"Current measurement failed: {current}A not in [{min_val}, {max_val}]A")
-                else:
-                    ctx.logger.info(f"Current measurement passed: {current}A")
-            except Exception as e:
-                ctx.logger.error(f"Failed to read current: {e}")
+            current = None
+            last_err = None
+            
+            # Try getting current from the background telemetry cache first
+            cached_current = ctx.runtime_values.get("current")
+            if cached_current is not None:
+                current = cached_current
+                ctx.logger.info("Using cached current from telemetry loop.")
+            else:
+                # Retry up to 3 times to mitigate serial collisions
+                for attempt in range(3):
+                    try:
+                        current = hw.read_mfm_current()
+                        if current is not None:
+                            break
+                        last_err = "Current returned as None"
+                    except Exception as e:
+                        last_err = str(e)
+                    time.sleep(0.5)
+
+            if current is None:
+                error_msg = f"Failed to get a valid current reading from the MFM meter after 3 attempts. Last error: {last_err}"
+                ctx.logger.error(error_msg)
+                raise Exception(error_msg)
+                
+            if current < min_val or current > max_val:
+                error_msg = f"Current measurement failed: {current}A not in [{min_val}, {max_val}]A"
+                ctx.logger.error(error_msg)
+                raise Exception(error_msg)
+            else:
+                ctx.logger.info(f"Current measurement passed: {current}A")
+
         self.add_step(f"Measure Current [{min_val}-{max_val}A]", action, device="MFM Meter")
         return self
         

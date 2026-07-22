@@ -11,8 +11,57 @@ class SettingsPage(QWidget, Ui_SettingsPage):
         self.main_window = main_window
         
         self.frame_appearance.hide()
-        self.btn_connect_all.clicked.connect(self.device_manager.connect_all)
+        self.btn_connect_all.clicked.connect(self._on_connect_all_clicked)
+        
+        # Wire DeviceManager signals for live feedback
+        self.device_manager.hw_status_summary.connect(self._on_hw_summary)
+        self.device_manager.device_status_changed.connect(self._on_device_status_changed)
+        
+        self._validate_buttons = {}  # device_name -> QPushButton (populated in _init_hw_config_ui)
+        
         self._init_hw_config_ui()
+    
+    @Slot()
+    def _on_connect_all_clicked(self):
+        """Triggers connect_all with visual feedback on the button."""
+        self.btn_connect_all.setText("Connecting...")
+        self.btn_connect_all.setStyleSheet("background-color: #F59E0B; color: white; font-weight: bold;")
+        self.btn_connect_all.setEnabled(False)
+        self.device_manager.connect_all()
+    
+    @Slot(str, bool)
+    def _on_hw_summary(self, summary: str, all_ok: bool):
+        """Updates the Connect All button when all connections are resolved."""
+        self.btn_connect_all.setEnabled(True)
+        if all_ok:
+            self.btn_connect_all.setText("All Connected ✓")
+            self.btn_connect_all.setStyleSheet("background-color: #22C55E; color: white; font-weight: bold;")
+        elif "Connecting" in summary:
+            return  # Still in progress
+        else:
+            self.btn_connect_all.setText("Connect All HW")
+            self.btn_connect_all.setStyleSheet("background-color: #EF4444; color: white; font-weight: bold;")
+        
+        # Reset style after 5 seconds
+        from PySide6.QtCore import QTimer
+        QTimer.singleShot(5000, self._reset_connect_btn_style)
+    
+    def _reset_connect_btn_style(self):
+        self.btn_connect_all.setText("Connect All HW")
+        self.btn_connect_all.setStyleSheet("")
+    
+    @Slot(str, bool)
+    def _on_device_status_changed(self, device_name: str, success: bool):
+        """Updates individual Validate buttons when connection status changes."""
+        btn = self._validate_buttons.get(device_name)
+        if btn:
+            if success:
+                btn.setStyleSheet("background-color: #22C55E; color: white; font-weight: bold;")
+                btn.setText("Connected")
+            else:
+                btn.setStyleSheet("background-color: #EF4444; color: white; font-weight: bold;")
+                btn.setText("Failed")
+
     def _init_hw_config_ui(self):
         self.hw_config_box = QGroupBox("Device Configuration")
         self.hw_config_layout = QVBoxLayout()
@@ -108,6 +157,7 @@ class SettingsPage(QWidget, Ui_SettingsPage):
             btn_validate = QPushButton("Validate")
             btn_validate.setFixedWidth(120)
             btn_validate.clicked.connect(lambda checked=False, name=original_name, btn=btn_validate: self._validate_device(name, btn))
+            self._validate_buttons[original_name] = btn_validate
             
             self.scroll_layout.addWidget(lbl_dev, row, 0, Qt.AlignmentFlag.AlignVCenter)
             self.scroll_layout.addWidget(config_widget, row, 1, Qt.AlignmentFlag.AlignVCenter)

@@ -9,8 +9,8 @@ class SafetyManager:
         self.config = config.get("safety", {})
         self.logger = logging.getLogger(__name__)
         
-        self.max_voltage = self.config.get("max_voltage_v", 250.0)
-        self.max_current = self.config.get("max_current_a", 10.0)
+        self.max_voltage = self.config.get("max_voltage_v", 300.0)
+        self.max_current = self.config.get("max_current_a", 120.0)
         
         # Master flag to lock out the system after an emergency
         self.emergency_triggered = False

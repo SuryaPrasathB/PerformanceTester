@@ -41,6 +41,8 @@ class HardwareService(QObject):
         self.safety_manager = None
         self.signal_injection = None
         
+        self._mfm_block_read_supported = True
+        
     @property
     def plc(self) -> PLCController:
         """Direct access to PLC controller."""
@@ -246,7 +248,7 @@ class HardwareService(QObject):
             swap_pf = (MFM_REGISTER_TYPES.get("PF", "SWAPPED_FLOAT") == "SWAPPED_FLOAT")
             
             # Try block read if voltage and current are on the same driver to save serial transactions
-            if drv_v_pf == drv_i and not getattr(drv_v_pf, "mock_mode", False) and hasattr(drv_v_pf, "read_data") and hasattr(drv_v_pf, "read_float"):
+            if self._mfm_block_read_supported and drv_v_pf == drv_i and not getattr(drv_v_pf, "mock_mode", False) and hasattr(drv_v_pf, "read_data") and hasattr(drv_v_pf, "read_float"):
                 try:
                     start_addr = int(MFMRegister.VOLTAGE)
                     if start_addr >= 40001:
@@ -255,7 +257,7 @@ class HardwareService(QObject):
                         start_addr = start_addr - 40000
                     
                     regs = drv_v_pf.read_data(address=start_addr, count=6, function_code=MFM_FUNCTION_CODE)
-                    if len(regs) >= 6:
+                    if regs and len(regs) >= 6:
                         import struct
                         # Decode float at regs[0], regs[1] -> Voltage
                         packed_v = struct.pack('>HH', regs[1], regs[0]) if swap_v else struct.pack('>HH', regs[0], regs[1])
@@ -275,37 +277,47 @@ class HardwareService(QObject):
                             "power_factor": pf,
                             "active_power": v * i * pf
                         }
+                    else:
+                        self.logger.warning("MFM block read returned incomplete data. Disabling block reads for this session.")
+                        self._mfm_block_read_supported = False
                 except Exception as e:
-                    self.logger.warning(f"MFM block read failed, falling back to individual reads: {e}")
+                    self.logger.warning(f"MFM block read failed, falling back to individual reads. Disabling block reads for this session: {e}")
+                    self._mfm_block_read_supported = False
             
             # Fallback to individual reads
-            v = 0.0
-            pf = 1.0
+            v = None
+            pf = None
             if hasattr(drv_v_pf, "read_float"):
                 v = drv_v_pf.read_float(int(MFMRegister.VOLTAGE), function_code=MFM_FUNCTION_CODE, swapped=swap_v)
                 pf = drv_v_pf.read_float(int(MFMRegister.PF), function_code=MFM_FUNCTION_CODE, swapped=swap_pf)
             else:
                 v_data = drv_v_pf.read_data(address=int(MFMRegister.VOLTAGE), count=1)
                 pf_data = drv_v_pf.read_data(address=int(MFMRegister.PF), count=1)
-                v = v_data[0] if v_data else 0.0
-                pf = pf_data[0] if pf_data else 1.0
+                v = v_data[0] if v_data else None
+                pf = pf_data[0] if pf_data else None
 
             # Read current from drv_i
-            i = 0.0
+            i = None
             if drv_i and drv_i.is_connected:
                 curr_addr = 40001 if drv_i == self.mfm2_drv else int(MFMRegister.CURRENT)
                 if hasattr(drv_i, "read_float"):
                     i = drv_i.read_float(curr_addr, function_code=MFM_FUNCTION_CODE, swapped=swap_i)
                 else:
                     i_data = drv_i.read_data(address=curr_addr, count=1)
-                    i = i_data[0] if i_data else 0.0
+                    i = i_data[0] if i_data else None
 
-            return {
-                "voltage": v,
-                "current": i,
-                "power_factor": pf,
-                "active_power": v * i * pf
-            }
+            telemetry = {}
+            if v is not None:
+                telemetry["voltage"] = v
+            if i is not None:
+                telemetry["current"] = i
+            if pf is not None:
+                telemetry["power_factor"] = pf
+            
+            if "voltage" in telemetry and "current" in telemetry and "power_factor" in telemetry:
+                telemetry["active_power"] = telemetry["voltage"] * telemetry["current"] * telemetry["power_factor"]
+                
+            return telemetry
         except Exception as e:
             self.logger.error(f"Error reading MFM telemetry: {e}")
         return {}

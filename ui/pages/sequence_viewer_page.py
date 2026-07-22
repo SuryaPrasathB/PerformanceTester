@@ -1,6 +1,3 @@
-import os
-import importlib
-import inspect
 import re
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QListWidget, 
@@ -117,24 +114,20 @@ class SequenceViewerPage(QWidget):
         self.main_layout.addWidget(self.right_panel)
 
     def _populate_tests(self):
-        from core.test_definitions.base_test import BaseTest
-        test_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "core", "test_definitions")
-        
-        if not os.path.exists(test_dir): return
+        # Use the static registry instead of filesystem auto-discovery.
+        # Filesystem scanning fails in frozen PyInstaller builds.
+        try:
+            from core.test_definitions.test_registry import REGISTERED_TESTS
+        except ImportError:
+            self.main_window.append_log("ERROR", "Failed to import test registry.")
+            return
             
-        for file in os.listdir(test_dir):
-            if file.endswith(".py") and file not in ["__init__.py", "base_test.py"]:
-                module_name = f"core.test_definitions.{file[:-3]}"
-                try:
-                    module = importlib.import_module(module_name)
-                    for name, obj in inspect.getmembers(module):
-                        if inspect.isclass(obj) and issubclass(obj, BaseTest) and obj is not BaseTest:
-                            display_name = re.sub(r"([a-z0-9])([A-Z])", r"\1 \2", name.replace("Test", ""))
-                            self.discovered_tests[name] = obj
-                            self.list_tests.addItem(display_name)
-                            self.list_tests.item(self.list_tests.count()-1).setData(Qt.UserRole, name)
-                except Exception as e:
-                    self.main_window.append_log("ERROR", f"Failed to load test {file}: {e}")
+        for test_class in REGISTERED_TESTS:
+            name = test_class.__name__
+            display_name = re.sub(r"([a-z0-9])([A-Z])", r"\1 \2", name.replace("Test", ""))
+            self.discovered_tests[name] = test_class
+            self.list_tests.addItem(display_name)
+            self.list_tests.item(self.list_tests.count()-1).setData(Qt.UserRole, name)
                     
         if self.list_tests.count() > 0:
             self.list_tests.setCurrentRow(0)

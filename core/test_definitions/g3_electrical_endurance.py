@@ -66,7 +66,7 @@ class G3ElectricalEnduranceTest(BaseTest):
         builder.stop_power_sequence(PLCCoil.CONTACTOR_120A_LOAD_BANK_COIL_ADDR)
         builder.prompt_user("Set Load to 240V Ic UPF", requires_input=False)
         
-        # 2-3. Turn ON ACB -> Delay -> Turn ON Contactor -> Turn ON SCR
+        # 2-3. Turn ON ACB -> Delay -> Turn ON Contactor
         builder.start_power_sequence(PLCCoil.CONTACTOR_120A_LOAD_BANK_COIL_ADDR)
         
 
@@ -152,7 +152,7 @@ class G3ElectricalEnduranceTest(BaseTest):
         # 22. Validate, Showcase and store results
         builder.custom_action("Verify Energy Difference & Store Results", self._verify_and_store)
         
-        # 23-24. Turn OFF ACB, SCR and Contactor
+        # 23-24. Turn OFF ACB and Contactor
         builder.stop_power_sequence(PLCCoil.CONTACTOR_120A_LOAD_BANK_COIL_ADDR)
 
     def _verify_and_store(self, ctx, hw):

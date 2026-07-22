@@ -171,34 +171,51 @@ class ModbusDriver(BaseDriver):
                 self.logger.error(f"Cannot read: Modbus not connected.")
                 return []
 
-            if self.is_serial and not self.mock_mode:
-                if hasattr(self.client, 'socket') and self.client.socket:
-                    try:
-                        self.client.socket.reset_input_buffer()
-                    except Exception:
-                        pass
-
-            try:
-                # function_code 4 means read input registers; otherwise default/3 means holding registers
-                if function_code == 4:
-                    result = self.client.read_input_registers(address=address, count=count, slave=slave)
-                else:
-                    result = self.client.read_holding_registers(address=address, count=count, slave=slave)
-                    
-                if result.isError():
-                    self.logger.error(f"Modbus read error (FC={function_code}, addr={address}): {result}")
-                    return []
-                self.logger.debug(f"Modbus read success (FC={function_code}, addr={address}): {result.registers}")
-                
-                res_regs = result.registers
-                self._cache[key] = (now, res_regs)
-                return res_regs
-            except Exception as e:
-                self.logger.error(f"Modbus read exception (FC={function_code}, addr={address}): {e}")
-                return []
-            finally:
+            for attempt in range(3):
                 if self.is_serial and not self.mock_mode:
-                    time.sleep(self.turnaround_delay)
+                    if hasattr(self.client, 'socket') and self.client.socket:
+                        try:
+                            self.client.socket.reset_input_buffer()
+                        except Exception:
+                            pass
+
+                try:
+                    # function_code 4 means read input registers; otherwise default/3 means holding registers
+                    if function_code == 4:
+                        result = self.client.read_input_registers(address=address, count=count, slave=slave)
+                    else:
+                        result = self.client.read_holding_registers(address=address, count=count, slave=slave)
+                        
+                    if result.isError():
+                        self._last_error = True
+                        if attempt < 2:
+                            time.sleep(0.2) # Give the line a moment to clear before retry
+                            continue
+                        self.logger.error(f"Modbus read error (FC={function_code}, addr={address}) after 3 attempts: {result}")
+                        return []
+                    
+                    self._last_error = False
+                    self.logger.debug(f"Modbus read success (FC={function_code}, addr={address}): {result.registers}")
+                    
+                    res_regs = result.registers
+                    self._cache[key] = (now, res_regs)
+                    
+                    if self.is_serial and not self.mock_mode:
+                        time.sleep(self.turnaround_delay)
+                        
+                    return res_regs
+                except Exception as e:
+                    self._last_error = True
+                    if attempt < 2:
+                        time.sleep(0.2)
+                        continue
+                    self.logger.error(f"Modbus read exception (FC={function_code}, addr={address}) after 3 attempts: {e}")
+                    return []
+                    
+            # Fallback if loop ends (shouldn't happen)
+            if self.is_serial and not self.mock_mode:
+                time.sleep(0.5)
+            return []
 
     def write_data(self, address: int, value: int, slave: int = None) -> bool:
         """Writes to a single register (or coil if mapped)."""
@@ -281,7 +298,7 @@ class ModbusDriver(BaseDriver):
                 regs = self.read_data(address=reg_addr, count=2, slave=slave, function_code=function_code)
                 if len(regs) < 2:
                     self.logger.warning(f"Could not read float from address {address}: expected 2 registers, got {len(regs)}")
-                    return 0.0
+                    return None
 
                 import struct
                 if swapped:
@@ -293,7 +310,7 @@ class ModbusDriver(BaseDriver):
                 return res_float
             except Exception as e:
                 self.logger.error(f"Error reading float from address {address} (mapped to {reg_addr}): {e}")
-                return 0.0
+                return None
 
     def read_coil(self, address: int, slave: int = None) -> bool:
         """Reads a single coil (binary value) from the Modbus device."""

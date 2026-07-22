@@ -4,7 +4,7 @@
 [Setup]
 AppId={{5D8B8497-2DF0-4FA9-A1B9-724FE35FCE99}}
 AppName=Pro-Perf
-AppVersion=1.0.0
+AppVersion=1.0.8
 AppPublisher=L S Control Systems
 DefaultDirName={autopf}\Pro-Perf
 DefaultGroupName=Pro-Perf

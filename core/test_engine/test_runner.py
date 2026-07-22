@@ -171,9 +171,14 @@ class TestRunner(QThread):
                 if hw:
                     telemetry = hw.read_mfm_telemetry()
                     if telemetry:
-                        self.context.update_runtime_value("voltage", telemetry.get("voltage", 0.0))
-                        self.context.update_runtime_value("current", telemetry.get("current", 0.0))
-                        self.context.update_runtime_value("power_factor", telemetry.get("power_factor", 1.0))
+                        if "voltage" in telemetry:
+                            self.context.update_runtime_value("voltage", telemetry["voltage"])
+                        if "current" in telemetry:
+                            self.context.update_runtime_value("current", telemetry["current"])
+                        if "power_factor" in telemetry:
+                            self.context.update_runtime_value("power_factor", telemetry["power_factor"])
+                        if "active_power" in telemetry:
+                            self.context.update_runtime_value("active_power", telemetry["active_power"])
                         
                 # 2. Update Data
                 # Copy the dict to avoid race conditions

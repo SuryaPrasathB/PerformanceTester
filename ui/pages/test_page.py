@@ -165,39 +165,29 @@ class TestPage(QWidget, Ui_TestPage):
         mode = profile.get("communication_mode", "").lower()
         if mode:
             self.device_manager.switch_device_type("EnergyMeter1", mode)
-
+ 
     def _populate_tests(self):
         self.list_tests.clear()
-        
-        # Auto-discover tests
-        import os
-        import importlib
-        import inspect
-        from core.test_definitions.base_test import BaseTest
-        
-        test_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "core", "test_definitions")
         self.discovered_tests = {}
         
-        if not os.path.exists(test_dir):
+        # Use a static registry instead of filesystem auto-discovery.
+        # Filesystem scanning fails in frozen PyInstaller builds because .py files
+        # are compiled to bytecode inside the archive, not present as loose files.
+        import re
+        try:
+            from core.test_definitions.test_registry import REGISTERED_TESTS
+        except ImportError:
+            self.main_window.append_log("ERROR", "Failed to import test registry.")
             return
             
-        for file in os.listdir(test_dir):
-            if file.endswith(".py") and file != "__init__.py" and file != "base_test.py":
-                module_name = f"core.test_definitions.{file[:-3]}"
-                try:
-                    module = importlib.import_module(module_name)
-                    for name, obj in inspect.getmembers(module):
-                        if inspect.isclass(obj) and issubclass(obj, BaseTest) and obj is not BaseTest:
-                            # Use class name nicely formatted
-                            # basic naive camel case split (also splits after numbers like G2, G3)
-                            import re
-                            display_name = re.sub(r"([a-z0-9])([A-Z])", r"\1 \2", name)
-                            
-                            self.discovered_tests[name] = obj
-                            self.list_tests.addItem(display_name)
-                            self.list_tests.item(self.list_tests.count()-1).setData(Qt.UserRole, name)
-                except Exception as e:
-                    self.main_window.append_log("ERROR", f"Failed to load test from {file}: {e}")
+        for test_class in REGISTERED_TESTS:
+            name = test_class.__name__
+            # Camel-case split for display (also splits after numbers like G2, G3)
+            display_name = re.sub(r"([a-z0-9])([A-Z])", r"\1 \2", name)
+            
+            self.discovered_tests[name] = test_class
+            self.list_tests.addItem(display_name)
+            self.list_tests.item(self.list_tests.count()-1).setData(Qt.UserRole, name)
                     
         self.list_tests.setCurrentRow(0)
 
@@ -273,6 +263,10 @@ class TestPage(QWidget, Ui_TestPage):
             hw_service.emergency_triggered.connect(self.main_window.handle_emergency_triggered)
             hw_service.waveform_captured.connect(self.add_waveform_card)
             
+            # The hardware service initializes inside TestContext before we connect signals.
+            # Manually trigger a UI update to clear any previous emergency state.
+            self.main_window.update_hardware_status("System", "Initialization Complete")
+            
         self.cmb_meter_profile.setEnabled(False)
         self.btn_start.setEnabled(False)
         self.btn_stop.setEnabled(True)
@@ -317,10 +311,23 @@ class TestPage(QWidget, Ui_TestPage):
         state = data.get("state", "RUNNING")
         
         v_str = f"{v:.1f}" if isinstance(v, (int, float)) else str(v)
-        i_str = f"{i:.3f}" if isinstance(i, (int, float)) else str(i)
+        
+        is_g7 = False
+        if self.test_runner and getattr(self.test_runner.test, "test_identifier", "").lower() == "g7":
+            is_g7 = True
+            
+        if isinstance(i, (int, float)):
+            if is_g7:
+                i_ma = i * 1000.0
+                i_str = f"{i_ma:.1f}mA"
+            else:
+                i_str = f"{i:.3f}A"
+        else:
+            i_str = f"{str(i)}mA" if is_g7 else f"{str(i)}A"
+            
         pf_str = f"{pf:.2f}" if isinstance(pf, (int, float)) else str(pf)
         
-        self.lbl_live_data.setText(f"STATE: {state} | V: {v_str}V | I: {i_str}A | PF: {pf_str}")
+        self.lbl_live_data.setText(f"STATE: {state} | V: {v_str}V | I: {i_str} | PF: {pf_str}")
 
 
         
@@ -403,13 +410,14 @@ class TestPage(QWidget, Ui_TestPage):
         if state == TestState.COMPLETE:
             is_success = self.test_runner.context.test_results.get("success", True)
             result = "PASS" if is_success else "FAIL"
-            color = "#10B981" # Emerald Green
+            color = "#10B981" if is_success else "#EF4444"
         elif state == TestState.ERROR:
-            if self.test_runner.context.cancel_event.is_set():
+            failure_reason = getattr(self.test_runner, "failure_reason", "") or ""
+            if self.test_runner.context.cancel_event.is_set() and "cancelled" in str(failure_reason).lower():
                 result = "CANCELLED"
                 color = "#F59E0B" # Amber/Orange
             else:
-                result = "FAIL (ERROR)"
+                result = "FAIL"
                 color = "#EF4444" # Red
         else:
             result = "INCOMPLETE"
@@ -420,12 +428,17 @@ class TestPage(QWidget, Ui_TestPage):
             calc_pf = self.test_runner.context.test_results.get("calculated_pf")
             if calc_pf is not None:
                 calculated_pf_str = f"<br><span style='font-size: 16px; color: {text_color};'>Calculated PF: <span style='font-weight: bold; color: #10B981;'>{calc_pf:.3f}</span></span>"
+                
+        failure_reason_str = ""
+        if result != "PASS" and self.test_runner and getattr(self.test_runner, "failure_reason", None):
+            reason = self.test_runner.failure_reason
+            failure_reason_str = f"<br><br><span style='font-size: 14px; color: {sec_color};'>Reason: </span><span style='font-size: 14px; color: #EF4444;'>{reason}</span>"
         
         html = f"""
         <div align='center' style='line-height: 140%;'>
             <span style='font-size: 14px; color: {sec_color}; font-weight: bold; letter-spacing: 1px;'>TEST SEQUENCE ENDED</span><br>
             <span style='font-size: 34px; color: {color}; font-weight: 800; letter-spacing: 0.5px;'>{result}</span><br>
-            <span style='font-size: 16px; color: {text_color};'>Meter Serial: <span style='font-weight: bold;'>{serial}</span></span>{calculated_pf_str}
+            <span style='font-size: 16px; color: {text_color};'>Meter Serial: <span style='font-weight: bold;'>{serial}</span></span>{calculated_pf_str}{failure_reason_str}
         </div>
         """
         self.lbl_instruction.setText(html)

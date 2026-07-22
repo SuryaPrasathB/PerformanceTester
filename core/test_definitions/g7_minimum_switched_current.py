@@ -10,13 +10,12 @@ class G7MinimumSwitchedCurrentTest(BaseTest):
         if is_sub_sequence:
             builder.custom_action("Start G7 Sub-Test Tracker", lambda ctx, hw: ctx.update_runtime_value("active_sub_test", "g7"))
 
-        # 1. Prompt user to set load to Vc Ic UPF.
+        # 1. Prompt user to set load to Vc Imin UPF.
         builder.stop_power_sequence(PLCCoil.CONTACTOR_100mA_LOAD_BANK_COIL_ADDR)
-        builder.prompt_user("Set load to Vc Ic UPF", requires_input=False)
+        builder.prompt_user("Set load to Vc Imin UPF", requires_input=False)
         
         # 2. Turn ON ACB (PLC Coil ACB_COIL_ADDR = 0x03).
         # 3. Delay as required.
-        # 4. Turn ON SCR (PLC Coil SCR_COIL_ADDR = 0x04).
         builder.start_power_sequence(PLCCoil.CONTACTOR_100mA_LOAD_BANK_COIL_ADDR)
         
         if not is_sub_sequence:
@@ -34,19 +33,31 @@ class G7MinimumSwitchedCurrentTest(BaseTest):
             
         builder.start_background_monitor("current_sensing", current_sensing_monitor)
         
-        # Repeat steps 6-8 (and 9) for 10 cycles
+        # Repeat steps 6-9 for 10 cycles
         def switched_current_loop(b, i):
             # 6. Close load switch.
             b.send_meter_command("close_load_switch")
             
-            # 7. Delay 10 seconds.
-            b.wait(10)
+            # Wait 2 seconds for the switch to mechanically close and current to establish
+            b.wait(2)
+            
+            # Verify current is above 10 mA (0.010 A)
+            b.measure_current(0.010, 100.0)
+            
+            # 7. Delay remaining 8 seconds (total 10s as before).
+            b.wait(8)
             
             # 8. Open load switch.
             b.send_meter_command("open_load_switch")
             
-            # 9. Delay 20 seconds.
-            b.wait(20)
+            # Wait 2 seconds for the switch to mechanically open and current to drop
+            b.wait(2)
+            
+            # Verify current is near zero (less than 0.3 mA = 0.0003 A)
+            b.measure_current(0.0, 0.0003)
+            
+            # 9. Delay remaining 18 seconds (total 20s as before).
+            b.wait(18)
 
         builder.loop(10, switched_current_loop)
         
@@ -67,8 +78,7 @@ class G7MinimumSwitchedCurrentTest(BaseTest):
             builder.prompt_user("Enter Final Energy Value", requires_input=True, save_as="energy_final")
             builder.custom_action("Verify Energy Difference & Store Results", self._verify_and_store)
         
-        # 11. Turn OFF ACB
-        # 12. Turn OFF SCR
+        # 11. Turn OFF ACB and Contactor
         builder.stop_power_sequence(PLCCoil.CONTACTOR_100mA_LOAD_BANK_COIL_ADDR)
 
     def _verify_and_store(self, ctx, hw):

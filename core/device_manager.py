@@ -39,7 +39,9 @@ class DeviceManager(QObject):
     drivers, and handles non-blocking connections using QThreads.
     """
     # Signal emitted when a device's connection status changes
-    device_status_changed = Signal(str, bool) 
+    device_status_changed = Signal(str, bool)
+    # Signal emitted with aggregate HW status summary (status_text, is_all_ok)
+    hw_status_summary = Signal(str, bool)
 
     def __init__(self, config_service, logger: logging.Logger, database_service=None):
         super().__init__()
@@ -51,6 +53,7 @@ class DeviceManager(QObject):
         self.drivers: Dict[str, BaseDriver] = {}
         self.threads: Dict[str, QThread] = {}
         self.workers: Dict[str, DeviceWorker] = {}
+        self.connection_states: Dict[str, bool] = {}  # Track per-device connection status
         
         self._initialize_devices()
 
@@ -89,6 +92,18 @@ class DeviceManager(QObject):
 
     def _setup_device_thread(self, device_name: str, driver: BaseDriver):
         """Sets up a QThread and worker for a device's asynchronous operations."""
+        if device_name in self.threads:
+            self.logger.warning(f"Device thread for '{device_name}' already exists. Safely stopping existing thread...")
+            old_thread = self.threads.pop(device_name, None)
+            old_worker = self.workers.pop(device_name, None)
+            if old_thread:
+                if old_thread.isRunning():
+                    old_thread.quit()
+                    old_thread.wait()
+                old_thread.deleteLater()
+            if old_worker:
+                old_worker.deleteLater()
+
         thread = QThread()
         worker = DeviceWorker(driver, device_name)
         
@@ -105,6 +120,11 @@ class DeviceManager(QObject):
 
     def connect_all(self):
         """Initiates connection for all managed devices."""
+        # Reset states and emit 'connecting' status
+        for device_name in self.workers:
+            self.connection_states[device_name] = False
+        self.hw_status_summary.emit("Connecting...", False)
+        
         for device_name, worker in self.workers.items():
             self.logger.info(f"Initiating connection for {device_name}...")
             # Use QMetaObject to safely invoke slot in the worker's thread
@@ -127,7 +147,32 @@ class DeviceManager(QObject):
         """Slot called when a worker finishes a connection attempt."""
         status = "Connected" if success else "Disconnected"
         self.logger.info(f"Device {device_name} status updated: {status}")
+        self.connection_states[device_name] = success
         self.device_status_changed.emit(device_name, success)
+        
+        # Emit aggregate summary
+        summary, all_ok = self._get_connection_summary()
+        self.hw_status_summary.emit(summary, all_ok)
+
+    def _get_connection_summary(self):
+        """Returns (summary_text, is_all_ok) based on tracked connection states."""
+        if not self.connection_states:
+            return "No Devices", False
+        
+        total = len(self.connection_states)
+        connected = sum(1 for v in self.connection_states.values() if v)
+        failed_devices = [name for name, ok in self.connection_states.items() if not ok]
+        
+        if connected == total:
+            return f"All OK ({connected}/{total})", True
+        elif connected == 0:
+            return f"All Failed ({total} devices)", False
+        else:
+            # Show first failed device name for quick identification
+            short_failed = failed_devices[0].replace('1', '') if failed_devices else '?'
+            if len(failed_devices) > 1:
+                short_failed += f" +{len(failed_devices)-1}"
+            return f"{connected}/{total} OK — {short_failed} failed", False
 
     def cleanup(self):
         """Cleans up threads before application exit."""

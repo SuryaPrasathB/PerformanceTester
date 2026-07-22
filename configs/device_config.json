@@ -34,7 +34,13 @@
       "parity": "NONE",
       "stopbits": 1,
       "slave_id": 2,
-      "mock": false
+      "mock": true
+    },
+    {
+      "name": "PicoScope1",
+      "type": "picoscope",
+      "port": "USB",
+      "mock": true
     }
   ],
   "plc": {},

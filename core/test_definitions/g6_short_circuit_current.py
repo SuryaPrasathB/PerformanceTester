@@ -15,9 +15,6 @@ class G6ShortCircuitCurrentTest(BaseTest):
         
         # 2. Turn ON ACB (PLC Coil ACB_COIL_ADDR = 0x03).
         # 3. Delay as required.
-        # 4. Turn ON SCR (PLC Coil SCR_COIL_ADDR = 0x04).
-        builder.start_power_sequence(PLCCoil.CONTACTOR_120A_LOAD_BANK_COIL_ADDR)
-        
 
         
         # 6. Prompt user to enter Initial Energy Value.
@@ -43,8 +40,7 @@ class G6ShortCircuitCurrentTest(BaseTest):
         # First Pre-Fusing Sequence
         add_pre_fusing_sequence(builder)
         
-        # 14. Turn OFF ACB.
-        # 15. Turn OFF SCR.
+        # 14. Turn OFF ACB and Contactor.
         builder.stop_power_sequence(PLCCoil.CONTACTOR_120A_LOAD_BANK_COIL_ADDR)
         
         # --- First Short Circuit Current Carrying Capacity Test ---
@@ -67,7 +63,6 @@ class G6ShortCircuitCurrentTest(BaseTest):
                 b.stop_power_sequence(PLCCoil.CONTACTOR_120A_LOAD_BANK_COIL_ADDR)
             
             b.prompt_user("Set load to Vc Ic UPF", requires_input=False)
-            b.start_power_sequence(PLCCoil.CONTACTOR_120A_LOAD_BANK_COIL_ADDR)
 
             # 19. Execute Pre-Fusing Sequence (Steps 7–13).
             add_pre_fusing_sequence(b)
@@ -75,7 +70,7 @@ class G6ShortCircuitCurrentTest(BaseTest):
             # Now set to High Current for the SC test
             b.stop_power_sequence(PLCCoil.CONTACTOR_120A_LOAD_BANK_COIL_ADDR)
             b.custom_action(f"Prompt for Load Configuration (Test 1, Iteration {i+1})", lambda ctx, hw: prompt_load_test_1(ctx, hw, i))
-            b.start_power_sequence(PLCCoil.CONTACTOR_120A_LOAD_BANK_COIL_ADDR)
+            b.set_plc_coil(PLCCoil.SCR_COIL_ADDR, True)  # SCR required for high current (>120A)
             
             # 20. Close load switch.
             b.send_meter_command("close_load_switch")
@@ -102,7 +97,6 @@ class G6ShortCircuitCurrentTest(BaseTest):
         # Revert to safe load configuration for post-test verification
         builder.stop_power_sequence(PLCCoil.CONTACTOR_120A_LOAD_BANK_COIL_ADDR)
         builder.prompt_user("Set load to Vc Ic UPF", requires_input=False)
-        builder.start_power_sequence(PLCCoil.CONTACTOR_120A_LOAD_BANK_COIL_ADDR)
 
         # 25. Close meter load switch.
         builder.send_meter_command("close_load_switch")
@@ -141,7 +135,6 @@ class G6ShortCircuitCurrentTest(BaseTest):
                 b.stop_power_sequence(PLCCoil.CONTACTOR_120A_LOAD_BANK_COIL_ADDR)
             
             b.prompt_user("Set load to Vc Ic UPF", requires_input=False)
-            b.start_power_sequence(PLCCoil.CONTACTOR_120A_LOAD_BANK_COIL_ADDR)
 
             # 34. Execute Pre-Fusing Sequence (Steps 7–13).
             add_pre_fusing_sequence(b)
@@ -149,7 +142,7 @@ class G6ShortCircuitCurrentTest(BaseTest):
             # Now set to High Current for the SC test
             b.stop_power_sequence(PLCCoil.CONTACTOR_120A_LOAD_BANK_COIL_ADDR)
             b.custom_action(f"Prompt for Load Configuration (Test 2, Iteration {i+1})", lambda ctx, hw: prompt_load_test_2(ctx, hw, i))
-            b.start_power_sequence(PLCCoil.CONTACTOR_120A_LOAD_BANK_COIL_ADDR)
+            b.set_plc_coil(PLCCoil.SCR_COIL_ADDR, True)  # SCR required for high current (>120A)
 
             # 35. Close load switch.
             b.send_meter_command("close_load_switch")
@@ -197,8 +190,7 @@ class G6ShortCircuitCurrentTest(BaseTest):
         # 42. Validate, display, and store results.
         builder.custom_action("Verify Energy Difference & Store Results", self._verify_and_store)
         
-        # 43. Turn OFF ACB.
-        # 44. Turn OFF SCR.
+        # 43. Turn OFF ACB and Contactor.
         builder.stop_power_sequence(PLCCoil.CONTACTOR_120A_LOAD_BANK_COIL_ADDR)
         
     def _verify_and_store(self, ctx, hw):

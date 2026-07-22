@@ -72,6 +72,11 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.frame_sidebar.installEventFilter(self)
         self._animate_sidebar(False, instant=True)
         
+        # 7. Wire DeviceManager HW status to the top-bar label
+        self.device_manager.hw_status_summary.connect(self._on_hw_summary)
+        self.lbl_hw_status.setText("HW: Waiting...")
+        self.lbl_hw_status.setStyleSheet("color: #94A3B8; font-weight: bold;")
+        
         # Hide config navigation -> Now we show it for Sequence Viewer
         if hasattr(self, 'nav_item_config'):
             self.nav_item_config.show()
@@ -236,9 +241,22 @@ class MainWindow(QMainWindow, Ui_MainWindow):
     def update_hardware_status(self, module: str, message: str):
         self.lbl_hw_status.setText(f"HW: {module} - {message}")
         if "EMERGENCY" in message or "STOP" in message:
-            self.lbl_hw_status.setStyleSheet("color: #F87171; font-weight: bold;")
+            self.lbl_hw_status.setStyleSheet("color: #F87171; font-weight: bold; background-color: #FEE2E2; border: 1px solid #EF4444;")
+        elif "OK" in message or "Complete" in message:
+            self.lbl_hw_status.setStyleSheet("color: #065F46; font-weight: bold; background-color: #D1FAE5; border: 1px solid #10B981;")
         else:
-            self.lbl_hw_status.setStyleSheet("")
+            self.lbl_hw_status.setStyleSheet("color: #94A3B8; font-weight: bold; background-color: #F1F5F9; border: 1px solid #E2E8F0;")
+
+    @Slot(str, bool)
+    def _on_hw_summary(self, summary: str, all_ok: bool):
+        """Updates HW status label from DeviceManager aggregate connection results."""
+        self.lbl_hw_status.setText(f"HW: {summary}")
+        if all_ok:
+            self.lbl_hw_status.setStyleSheet("color: #065F46; font-weight: bold; background-color: #D1FAE5; border: 1px solid #10B981;")
+        elif "Connecting" in summary:
+            self.lbl_hw_status.setStyleSheet("color: #D97706; font-weight: bold; background-color: #FEF3C7; border: 1px solid #F59E0B;")
+        else:
+            self.lbl_hw_status.setStyleSheet("color: #F87171; font-weight: bold; background-color: #FEE2E2; border: 1px solid #EF4444;")
 
     @Slot()
     def trigger_emergency_stop(self):
