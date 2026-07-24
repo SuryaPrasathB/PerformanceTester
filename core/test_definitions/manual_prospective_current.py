@@ -11,22 +11,47 @@ class ManualProspectiveCurrentTest(BaseTest):
     def build(self, builder: TestBuilder):
         # 1. Prompt User to set Load Vc, (2.5 / 3 / 4.5 / 6) kA, UPF
         builder.stop_power_sequence(PLCCoil.CONTACTOR_120A_LOAD_BANK_COIL_ADDR)
-        builder.prompt_user("Set Load Vc, (2.5 / 3 / 4.5 / 6) kA, UPF", requires_input=False)
+        builder.prompt_user("Set Load Vc, (2.5 / 3 / 4.5 / 6) kA, UPF. \nEnter Expected Peak Voltage (e.g. 2 for 100A, 20 for 6kA):", requires_input=True, save_as="expected_peak_voltage")
         
         # Start Power Sequence (ACB -> Delay -> 120A Contactor, NO SCR)
         builder.set_plc_coil(PLCCoil.ACB_COIL_ADDR, True)
         builder.verify_plc_coil_status(PLCCoil.ACB_STATUS, "ACB")
-        builder.set_plc_coil(PLCCoil.CONTACTOR_120A_LOAD_BANK_COIL_ADDR, True)
-        builder.verify_plc_coil_status(PLCCoil.CONTACTOR_120A_STATUS, "120A Contactor")
-        
+ 
         # 2. Close Load Switch
         builder.send_meter_command("close_load_switch")
         
-        # 3. Notify PLC that the test is starting (using SCCC_TEST_START = 0x06)
+        # 3. Configure PicoScope Range dynamically
+        def configure_picoscope(ctx, hw):
+            expected_v = float(ctx.get_runtime_value("expected_peak_voltage", 20.0))
+            # Determine range index based on expected voltage
+            if expected_v <= 1.0: range_idx = 6 # 1V
+            elif expected_v <= 2.0: range_idx = 7 # 2V
+            elif expected_v <= 5.0: range_idx = 8 # 5V
+            elif expected_v <= 10.0: range_idx = 9 # 10V
+            else: range_idx = 10 # 20V
+            
+            pico = hw.picoscope
+            if pico:
+                pico.set_channel_ranges(10, range_idx)
+                ctx.logger.info(f"Dynamically set PicoScope Channel B to {range_idx} (+/- {expected_v}V)")
+        builder.custom_action("Configure PicoScope Range", configure_picoscope)
+
+        # 4. Start capturing PicoScope waveform with optional delay shift
+        def start_pico_shifted(ctx, hw):
+            delay = 0
+            if hw.picoscope and hasattr(hw.picoscope, 'capture_delay_ms'):
+                delay = hw.picoscope.capture_delay_ms
+            
+            if delay > 0:
+                ctx.logger.info(f"Shifting capture start by {delay}ms...")
+                time.sleep(delay / 1000.0)
+                
+            getattr(hw, "start_waveform_capture", lambda: ctx.logger.info("Started Waveform Capture"))()
+            
+        builder.custom_action("Start PicoScope Capture", start_pico_shifted)
+
+        # 5. Notify PLC that the test is starting (using SCCC_TEST_START = 0x06)
         builder.set_plc_coil(PLCCoil.SCCC_TEST_START, True)
-        
-        # 4. Start capturing PicoScope waveform.
-        builder.custom_action("Start PicoScope Capture", lambda ctx, hw: getattr(hw, "start_waveform_capture", lambda: ctx.logger.info("Started Waveform Capture"))())
         
         # 5. After 20 ms, stop waveform capture and save the waveform.
         def wait_and_stop_capture(ctx, hw):

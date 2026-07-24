@@ -72,8 +72,14 @@ class PicoScopeDriver(BaseDriver):
         self.port = config.get("port", "USB")
         self.handle = 0
         self.is_capturing = False
-        self.no_of_values = 2500
-        self.timebase = 13  # 10 * 2^13 ns = 81.92 us per sample -> ~204 ms total capture window
+        self.no_of_values = config.get("no_of_values", 2500)
+        self.timebase = config.get("timebase", 14) # Changed to 14 for high resolution 1.3s window
+        self.range_a_index = config.get("range_a_index", 10) # 10 = +/- 20V
+        self.range_b_index = config.get("range_b_index", 10) # 10 = +/- 20V
+        self.enable_channel_a = config.get("enable_channel_a", True)
+        self.enable_channel_b = config.get("enable_channel_b", True)
+        self.capture_delay_ms = config.get("capture_delay_ms", 0)
+        self.mock_mode = config.get("mock", False)
 
     def connect(self) -> bool:
         """Establishes connection to PicoScope."""
@@ -98,10 +104,10 @@ class PicoScopeDriver(BaseDriver):
                 self.is_connected = True
                 self.logger.info(f"PicoScope: Connected successfully. Handle: {self.handle}")
                 
-                # Channel A enabled, DC coupling, 20V Range (constant 10)
-                ps2000.ps2000_set_channel(self.handle, 0, 1, 1, 10)
-                # Channel B enabled, DC coupling, 5V Range (constant 8)
-                ps2000.ps2000_set_channel(self.handle, 1, 1, 1, 8)
+                # Enable or Disable Channel A
+                ps2000.ps2000_set_channel(self.handle, 0, 1 if self.enable_channel_a else 0, 1, self.range_a_index)
+                # Enable or Disable Channel B
+                ps2000.ps2000_set_channel(self.handle, 1, 1 if self.enable_channel_b else 0, 1, self.range_b_index)
                 return True
             else:
                 self.logger.error("PicoScope: Failed to open device unit. Falling back to Mock Mode.")
@@ -136,6 +142,17 @@ class PicoScopeDriver(BaseDriver):
                 self.is_connected = False
         return True
 
+    def set_channel_ranges(self, range_a_index: int, range_b_index: int):
+        """Dynamically reconfigures the channel voltage ranges."""
+        self.range_a_index = range_a_index
+        self.range_b_index = range_b_index
+        if self.handle > 0 and ps2000:
+            # Enable or Disable Channel A
+            ps2000.ps2000_set_channel(self.handle, 0, 1 if self.enable_channel_a else 0, 1, self.range_a_index)
+            # Enable or Disable Channel B
+            ps2000.ps2000_set_channel(self.handle, 1, 1 if self.enable_channel_b else 0, 1, self.range_b_index)
+            self.logger.info(f"PicoScope: Channel ranges updated. A:{range_a_index}, B:{range_b_index}")
+
     def start_capture(self) -> bool:
         """Starts a block capture sequence."""
         if not self.is_connected:
@@ -152,6 +169,8 @@ class PicoScopeDriver(BaseDriver):
         if ps2000:
             try:
                 # Disable hardware trigger (Auto-trigger immediately)
+                # We cannot use a hardware trigger because the pulse can be negative or positive,
+                # and PS2000 does not support dual-edge window triggers.
                 ps2000.ps2000_set_trigger(self.handle, 5, 0, 0, 0, 0)
                 
                 time_indisposed_ms = c_int32(0)
@@ -191,8 +210,8 @@ class PicoScopeDriver(BaseDriver):
                 start_wait = time.time()
                 while ps2000.ps2000_ready(self.handle) == 0:
                     time.sleep(0.005)
-                    if time.time() - start_wait > 0.5:
-                        self.logger.warning("PicoScope: Timeout waiting for block ready status.")
+                    if time.time() - start_wait > 5.0:
+                        self.logger.warning("PicoScope: Timeout waiting for block ready status (or trigger never occurred).")
                         break
                 ps2000.ps2000_stop(self.handle)
             except Exception as e:
@@ -216,8 +235,8 @@ class PicoScopeDriver(BaseDriver):
                 
                 num_read = ps2000.ps2000_get_values(
                     self.handle,
-                    buffer_a,
-                    buffer_b,
+                    buffer_a if self.enable_channel_a else None,
+                    buffer_b if self.enable_channel_b else None,
                     None,
                     None,
                     byref(overflow),
@@ -228,10 +247,14 @@ class PicoScopeDriver(BaseDriver):
                     self.logger.info(f"PicoScope: Read {num_read} values from hardware buffer.")
                     
                     # Convert raw ADC values to voltage/current
-                    # Channel A: ±20V -> index 10 -> range_volts = 20.0
-                    # Channel B: ±5V -> index 8 -> range_volts = 5.0
-                    range_volts_a = 20.0
-                    range_volts_b = 5.0
+                    # PS2000 Range mapping: 
+                    # 6=1V, 7=2V, 8=5V, 9=10V, 10=20V
+                    RANGE_MAP = {
+                        0: 0.01, 1: 0.02, 2: 0.05, 3: 0.1, 4: 0.2, 
+                        5: 0.5, 6: 1.0, 7: 2.0, 8: 5.0, 9: 10.0, 10: 20.0
+                    }
+                    range_volts_a = RANGE_MAP.get(self.range_a_index, 20.0)
+                    range_volts_b = RANGE_MAP.get(self.range_b_index, 20.0)
                     max_adc = 32512.0
                     
                     scaled_a = []

@@ -78,7 +78,19 @@ class G6ShortCircuitCurrentTest(BaseTest):
             # 21. Notify PLC that the test is starting (SCCC_TEST_START = 0x01).
             b.set_plc_coil(PLCCoil.SCCC_TEST_START, True)
             
-            # 22. Start capturing PicoScope waveform.
+            # 22. Auto-configure PicoScope Range based on category
+            def configure_picoscope_g6_1(ctx, hw):
+                cat = str(ctx.get_runtime_value("meter_category_1", "U2")).strip().upper()
+                pico = hw.picoscope
+                if pico:
+                    # G6 Test 1: 4.5kA (U2) or 6kA (U3). 
+                    # 6kA reaches ~10V, so use Range 10 (+/- 20V) to be completely safe from clipping.
+                    range_idx = 10
+                    pico.set_channel_ranges(10, range_idx)
+                    ctx.logger.info(f"Dynamically set PicoScope Channel B to {range_idx} for {cat}")
+            b.custom_action("Auto-Configure PicoScope Range", configure_picoscope_g6_1)
+
+            # 22b. Start capturing PicoScope waveform.
             b.custom_action("Start PicoScope Capture", lambda ctx, hw: getattr(hw, "start_waveform_capture", lambda: ctx.logger.info("Started Waveform Capture"))())
             
             # 23. After 20 ms, stop waveform capture and save the waveform.
@@ -150,7 +162,19 @@ class G6ShortCircuitCurrentTest(BaseTest):
             # 36. Notify PLC that the test is starting (SCCC_TEST_START = 0x01).
             b.set_plc_coil(PLCCoil.SCCC_TEST_START, True)
             
-            # 37. Start capturing PicoScope waveform.
+            # 37. Auto-configure PicoScope Range based on category
+            def configure_picoscope_g6_2(ctx, hw):
+                cat = str(ctx.get_runtime_value("meter_category_2", "U2")).strip().upper()
+                pico = hw.picoscope
+                if pico:
+                    # G6 Test 2: 2.5kA (U2) or 3kA (U3). 
+                    # 3kA reaches ~5V, so use Range 9 (+/- 10V) or 8 (+/- 5V). 
+                    range_idx = 8 if cat == "U2" else 9
+                    pico.set_channel_ranges(10, range_idx)
+                    ctx.logger.info(f"Dynamically set PicoScope Channel B to {range_idx} for {cat}")
+            b.custom_action("Auto-Configure PicoScope Range", configure_picoscope_g6_2)
+
+            # 37b. Start capturing PicoScope waveform.
             b.custom_action("Start PicoScope Capture", lambda ctx, hw: getattr(hw, "start_waveform_capture", lambda: ctx.logger.info("Started Waveform Capture"))())
             
             # 38. After 20 ms, stop waveform capture and save the waveform.

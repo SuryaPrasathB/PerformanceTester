@@ -250,6 +250,7 @@ class TestBuilder:
             return self
 
         def action(ctx, hw):
+            import time
             profile = getattr(ctx, "meter_profile", None)
             if not profile:
                 from services.profile_manager import ProfileManager
@@ -393,14 +394,20 @@ class TestBuilder:
                         ctx.logger.error("Meter profile specifies DLMS, but driver is not DlmsDriver.")
                         raise Exception("Driver type mismatch.")
 
-            # Send unlock before switch operation if unlock is configured and has a value
-            if command_key in ["close_load_switch", "open_load_switch"]:
+            if mode == "serial" and command_key in ["close_load_switch", "open_load_switch"]:
+                # Set a preliminary ignore window to cover the time it takes to send unlock + command
+                ctx.update_runtime_value("ignore_mfm_until", time.time() + 10)
+                
                 unlock_cmd = profile.get("commands", {}).get("unlock")
                 if unlock_cmd and unlock_cmd.get("value"):
                     execute_single_command("unlock", is_auto_unlock=True)
                     time.sleep(0.2)
             
             execute_single_command(command_key)
+            
+            if mode == "serial" and command_key in ["close_load_switch", "open_load_switch"]:
+                # Refresh the ignore window to exactly 5 seconds after the command has successfully been sent
+                ctx.update_runtime_value("ignore_mfm_until", time.time() + 5)
 
         self.add_step(f"Send Command: {command_key}", action, device="Energy Meter")
         return self
@@ -408,6 +415,12 @@ class TestBuilder:
     def measure_current(self, min_val: float, max_val: float):
         def action(ctx, hw):
             import time
+            ignore_until = ctx.get_runtime_value("ignore_mfm_until", 0)
+            if time.time() < ignore_until:
+                sleep_time = ignore_until - time.time()
+                ctx.update_status(f"Waiting {sleep_time:.1f}s for MFM current to settle...")
+                time.sleep(sleep_time)
+                
             ctx.update_status("Measuring Current (MFM)...")
             current = None
             last_err = None

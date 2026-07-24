@@ -15,8 +15,14 @@ def calculate_pulse_duration(current_data: list, timebase: int) -> float:
     interval_ns = 10 * (2 ** timebase)
     interval_ms = interval_ns / 1000000.0
 
+    # Remove DC offset (baseline) using the first 20 samples 
+    # (Assuming the pulse starts after the capture triggers due to contactor mechanical delay)
+    baseline_samples = min(20, len(current_data) // 10)
+    baseline = sum(current_data[:baseline_samples]) / max(1, baseline_samples)
+    centered_data = [x - baseline for x in current_data]
+
     # Find peak absolute value to set threshold
-    peak_val = max(abs(x) for x in current_data)
+    peak_val = max(abs(x) for x in centered_data)
     
     # Noise threshold: if peak value is too small, assume no pulse
     if peak_val < 0.05:
@@ -25,8 +31,8 @@ def calculate_pulse_duration(current_data: list, timebase: int) -> float:
 
     # Find the index of the peak absolute value
     max_idx = 0
-    for i in range(len(current_data)):
-        if abs(current_data[i]) == peak_val:
+    for i in range(len(centered_data)):
+        if abs(centered_data[i]) == peak_val:
             max_idx = i
             break
 
@@ -35,12 +41,12 @@ def calculate_pulse_duration(current_data: list, timebase: int) -> float:
 
     # Walk backwards from the peak to find the start of the pulse
     start_idx = max_idx
-    while start_idx > 0 and abs(current_data[start_idx]) >= threshold:
+    while start_idx > 0 and abs(centered_data[start_idx]) >= threshold:
         start_idx -= 1
 
     # Walk forwards from the peak to find the end of the pulse
     end_idx = max_idx
-    while end_idx < len(current_data) - 1 and abs(current_data[end_idx]) >= threshold:
+    while end_idx < len(centered_data) - 1 and abs(centered_data[end_idx]) >= threshold:
         end_idx += 1
 
     duration_samples = end_idx - start_idx

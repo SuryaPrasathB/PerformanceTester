@@ -145,8 +145,8 @@ class WaveformGraph(QWidget):
         self.view_max_volt = limit
         
         if self.data_b:
-            max_c = max(abs(x) for x in self.data_b)
-            c_limit = max(1.0, max_c * 1.1)
+            max_c = max(abs(x) for x in self.data_b) if self.data_b else 15.0
+            c_limit = max(15.0, max_c * 1.1)
             self.view_min_curr = -c_limit
             self.view_max_curr = c_limit
 
@@ -154,7 +154,17 @@ class WaveformGraph(QWidget):
         """Performs search to locate voltage dip or current surge and focuses the viewport."""
         area = self.detect_interest_area()
         if area:
-            self.view_start_time_ms, self.view_end_time_ms = area
+            t_start, t_end, zoom_start, zoom_end = area
+            self.view_start_time_ms = zoom_start
+            self.view_end_time_ms = zoom_end
+            
+            # Automatically set cursors to the measurement duration
+            self.cursor1_t = t_start
+            self.cursor2_t = t_end
+            
+            # Open measurement tool automatically
+            self.show_zoom_toolbox = True
+            self.current_tool = ToolMode.RULER
         else:
             self.reset_zoom()
 
@@ -238,11 +248,12 @@ class WaveformGraph(QWidget):
         t_end = event_ends[-1] * self.interval_ms
         duration = t_end - t_start
         
-        padding = max(duration * 0.2, 12.0)  # Add at least 12ms context
+        # Tight padding to show just the event and a tiny bit of context
+        padding = max(duration * 0.1, 2.0)  
         zoom_start = max(0.0, t_start - padding)
         zoom_end = min(n * self.interval_ms, t_end + padding)
         
-        return zoom_start, zoom_end
+        return t_start, t_end, zoom_start, zoom_end
 
     def clamp_view(self):
         """Keeps viewport limits within logical ranges."""
@@ -388,11 +399,11 @@ class WaveformGraph(QWidget):
             painter.setPen(QPen(QColor("#1D4ED8"))) # Blue for voltage
             painter.drawText(QRect(5, y - 8, self.pad_left - 10, 16), Qt.AlignRight | Qt.AlignVCenter, f"{v:.1f}V" if max(abs(self.view_max_volt), abs(self.view_min_volt)) < 100.0 else f"{v:.0f}V")
             
-            # Right Axis (Current)
+            # Right Axis (Channel B)
             if self.data_b:
                 c = self.view_max_curr - (i * (self.view_max_curr - self.view_min_curr) / 10.0)
-                painter.setPen(QPen(QColor("#EF4444"))) # Red for current
-                painter.drawText(QRect(w - self.pad_right + 5, y - 8, self.pad_right - 10, 16), Qt.AlignLeft | Qt.AlignVCenter, f"{c:.1f}A" if max(abs(self.view_max_curr), abs(self.view_min_curr)) < 100.0 else f"{c:.0f}A")
+                painter.setPen(QPen(QColor("#EF4444"))) # Red for Channel B
+                painter.drawText(QRect(w - self.pad_right + 5, y - 8, self.pad_right - 10, 16), Qt.AlignLeft | Qt.AlignVCenter, f"{c:.1f}V" if max(abs(self.view_max_curr), abs(self.view_min_curr)) < 100.0 else f"{c:.0f}V")
             
         # X Axis (Time)
         if self.data_a:
@@ -590,7 +601,7 @@ class WaveformGraph(QWidget):
         # Voltage row (Y indicators)
         painter.fillRect(box_x + 5, r_y + 2 * row_h + 5, 12, 12, QColor("#DC2626"))
         
-        units = "V" if max(abs(self.view_max_volt), abs(self.view_min_volt)) < 100.0 else "A"
+        units = "V"
         painter.drawText(QRect(c_x1, r_y + 2 * row_h, 65, row_h), Qt.AlignCenter, f"{vy1:.2f}{units}")
         painter.drawText(QRect(c_x2, r_y + 2 * row_h, 65, row_h), Qt.AlignCenter, "--")
         painter.drawText(QRect(c_x3, r_y + 2 * row_h, 65, row_h), Qt.AlignCenter, "--")

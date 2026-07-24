@@ -305,6 +305,10 @@ class HardwareService(QObject):
                 else:
                     i_data = drv_i.read_data(address=curr_addr, count=1)
                     i = i_data[0] if i_data else None
+                
+                # MFM Meter 2 returns mA directly; convert to A
+                if i is not None and drv_i == self.mfm2_drv:
+                    i = i / 1000.0
 
             telemetry = {}
             if v is not None:
@@ -339,10 +343,16 @@ class HardwareService(QObject):
             swap_i = (MFM_REGISTER_TYPES.get("CURRENT", "SWAPPED_FLOAT") == "SWAPPED_FLOAT")
             curr_addr = 40001 if drv_i == self.mfm2_drv else int(MFMRegister.CURRENT)
             if hasattr(drv_i, "read_float"):
-                return drv_i.read_float(curr_addr, function_code=MFM_FUNCTION_CODE, swapped=swap_i)
+                val = drv_i.read_float(curr_addr, function_code=MFM_FUNCTION_CODE, swapped=swap_i)
             else:
                 i_data = drv_i.read_data(address=curr_addr, count=1)
-                return i_data[0] if i_data else 0.0
+                val = i_data[0] if i_data else 0.0
+                
+            # MFM Meter 2 returns mA directly; convert to A
+            if val is not None and drv_i == self.mfm2_drv:
+                val = val / 1000.0
+                
+            return val or 0.0
         except Exception as e:
             self.logger.error(f"Error reading MFM current: {e}")
         return 0.0

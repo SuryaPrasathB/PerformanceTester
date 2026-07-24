@@ -2,58 +2,23 @@ from typing import List
 from core.test_definitions.base_test import BaseTest
 from core.test_engine.test_builder import TestBuilder
 from core.hardware_mapping import PLCCoil
-
-def current_sensing_monitor(ctx, hw):
-    profile = getattr(ctx, "meter_profile", {})
-    if profile.get("communication_mode", "").lower() == "external":
-        return
-        
-    expected_state = ctx.get_runtime_value("expected_meter_switch_state", "OPEN")
-    
+def _abort_test(ctx, hw, reason: str):
     try:
-        # Read MFM current (mocked if not available, usually 10.0 or 0.0)
-        current = getattr(hw, "read_mfm_current", lambda: 10.0 if expected_state == "CLOSED" else 0.0)()
-        
-        consecutive_weld = ctx.get_runtime_value("consecutive_weld_faults", 0)
-        consecutive_open = ctx.get_runtime_value("consecutive_open_faults", 0)
+        from core.hardware_mapping import PLCCoil
+        hw.plc.write_coil(PLCCoil.ACB_COIL_ADDR.value, False)
+        hw.plc.write_coil(PLCCoil.CONTACTOR_120A_LOAD_BANK_COIL_ADDR.value, False)
+        hw.plc.write_coil(PLCCoil.CONTACTOR_100mA_LOAD_BANK_COIL_ADDR.value, False)
+        hw.plc.write_coil(PLCCoil.SCR_COIL_ADDR.value, False)
+    except Exception:
+        pass
+    
+    if not hasattr(ctx, "test_results"):
+        ctx.test_results = {}
+    ctx.test_results["success"] = False
+    ctx.test_results["failure_reason"] = reason
+    ctx.cancel_event.set()
 
-        if expected_state == "OPEN":
-            if current > 0.1:
-                consecutive_weld += 1
-            else:
-                consecutive_weld = 0
-        elif expected_state == "CLOSED":
-            if current < 0.1:
-                consecutive_open += 1
-            else:
-                consecutive_open = 0
 
-        ctx.update_runtime_value("consecutive_weld_faults", consecutive_weld)
-        ctx.update_runtime_value("consecutive_open_faults", consecutive_open)
-
-        if consecutive_weld >= 2:
-            ctx.logger.error("WELD FAULT DETECTED! Aborting test.")
-            try:
-                hw.plc.write_coil(PLCCoil.ACB_COIL_ADDR.value, False)
-                hw.plc.write_coil(PLCCoil.CONTACTOR_120A_LOAD_BANK_COIL_ADDR.value, False)
-                hw.plc.write_coil(PLCCoil.CONTACTOR_100mA_LOAD_BANK_COIL_ADDR.value, False)
-                hw.plc.write_coil(PLCCoil.SCR_COIL_ADDR.value, False)
-            except Exception:
-                pass
-            ctx.cancel_event.set()
-        elif consecutive_open >= 2:
-            ctx.logger.error("OPEN FAULT DETECTED! Aborting test.")
-            try:
-                hw.plc.write_coil(PLCCoil.ACB_COIL_ADDR.value, False)
-                hw.plc.write_coil(PLCCoil.CONTACTOR_120A_LOAD_BANK_COIL_ADDR.value, False)
-                hw.plc.write_coil(PLCCoil.CONTACTOR_100mA_LOAD_BANK_COIL_ADDR.value, False)
-                hw.plc.write_coil(PLCCoil.SCR_COIL_ADDR.value, False)
-            except Exception:
-                pass
-            ctx.cancel_event.set()
-
-    except Exception as e:
-        ctx.logger.error(f"Error in Current Sensing Monitor: {e}")
 
 
 class G3ElectricalEnduranceTest(BaseTest):
@@ -62,9 +27,14 @@ class G3ElectricalEnduranceTest(BaseTest):
     Verifies the contact durability over 8000 switching operations.
     """
     def build(self, builder: TestBuilder):
+        builder.custom_action("Initialize Fault Counters", lambda ctx, hw: (
+            ctx.update_runtime_value("total_weld_fault_cycles", 0),
+            ctx.update_runtime_value("total_open_fault_cycles", 0)
+        ))
+        
         # 1. Prompt User to Set Load to Vc Ic UPF
         builder.stop_power_sequence(PLCCoil.CONTACTOR_120A_LOAD_BANK_COIL_ADDR)
-        builder.prompt_user("Set Load to 240V Ic UPF", requires_input=False)
+        builder.prompt_user("Set Load to Vc Ic UPF", requires_input=False)
         
         # 2-3. Turn ON ACB -> Delay -> Turn ON Contactor
         builder.start_power_sequence(PLCCoil.CONTACTOR_120A_LOAD_BANK_COIL_ADDR)
@@ -77,22 +47,84 @@ class G3ElectricalEnduranceTest(BaseTest):
         # 6. Prompt user to Enter Off Time Between 10-60 secs
         builder.prompt_user("Enter OFF Time between 10-60 secs (ON time defaults to 10s)", requires_input=True, save_as="off_delay")
         
-        # Start Parallel Background Process
-        builder.start_background_monitor("Current Sensing", current_sensing_monitor)
-        
         # Helper loop generator
         def make_cycles(pf):
             def cycle_logic(b, i):
-                # Update expected state for monitor
-                b.custom_action("Set expected state to CLOSED", lambda ctx, hw: ctx.update_runtime_value("expected_meter_switch_state", "CLOSED"))
+                # 1. Close Load Switch
                 b.send_meter_command("close_load_switch")
-                b.wait(10)
                 
-                b.custom_action("Set expected state to OPEN", lambda ctx, hw: ctx.update_runtime_value("expected_meter_switch_state", "OPEN"))
+                # 2. Sequential Check for OPEN Fault (Current should be > 0.1A because switch is closed)
+                def check_open_fault(ctx, hw):
+                    profile = getattr(ctx, "meter_profile", {})
+                    if profile.get("communication_mode", "").lower() == "external":
+                        return
+                        
+                    import time
+                    ignore_until = ctx.get_runtime_value("ignore_mfm_until", 0)
+                    now = time.time()
+                    if ignore_until > now:
+                        delay = ignore_until - now
+                        ctx.logger.info(f"Waiting {delay:.1f}s for MFM current to settle...")
+                        time.sleep(delay)
+                        
+                    current = getattr(hw, "read_mfm_current", lambda: 10.0)()
+                    if current < 0.1:
+                        total = ctx.get_runtime_value("total_open_fault_cycles", 0) + 1
+                        ctx.update_runtime_value("total_open_fault_cycles", total)
+                        ctx.logger.warning(f"Open fault detected in cycle {i+1}. Current: {current}A. Total: {total}/3")
+                        if total >= 3:
+                            ctx.logger.error("3 OPEN FAULT CYCLES DETECTED! Aborting test.")
+                            _abort_test(ctx, hw, "3 OPEN FAULT CYCLES DETECTED")
+                b.custom_action("Check Open Fault", check_open_fault)
+                
+                # 3. Wait ON Time (10s)
+                def dynamic_wait_on(ctx, hw):
+                    import time
+                    for s in range(10, 0, -1):
+                        if ctx.cancel_event.is_set():
+                            break
+                        ctx.update_status(f"Waiting ON time: {s}s...")
+                        time.sleep(1)
+                b.custom_action("Wait ON Time", dynamic_wait_on)
+                
+                # 4. Open Load Switch
                 b.send_meter_command("open_load_switch")
                 
-                # Dynamic off delay wait
-                b.custom_action("Wait Off Delay", lambda ctx, hw: b.wait(int(ctx.get_runtime_value("off_delay", 10)))._steps[-1].action(ctx, hw))
+                # 5. Sequential Check for WELD Fault (Current should be < 0.1A because switch is open)
+                def check_weld_fault(ctx, hw):
+                    profile = getattr(ctx, "meter_profile", {})
+                    if profile.get("communication_mode", "").lower() == "external":
+                        return
+                        
+                    import time
+                    ignore_until = ctx.get_runtime_value("ignore_mfm_until", 0)
+                    now = time.time()
+                    if ignore_until > now:
+                        delay = ignore_until - now
+                        ctx.logger.info(f"Waiting {delay:.1f}s for MFM current to settle...")
+                        time.sleep(delay)
+                        
+                    current = getattr(hw, "read_mfm_current", lambda: 0.0)()
+                    if current > 0.1:
+                        total = ctx.get_runtime_value("total_weld_fault_cycles", 0) + 1
+                        ctx.update_runtime_value("total_weld_fault_cycles", total)
+                        ctx.logger.warning(f"Weld fault detected in cycle {i+1}. Current: {current}A. Total: {total}/3")
+                        if total >= 3:
+                            ctx.logger.error("3 WELD FAULT CYCLES DETECTED! Aborting test.")
+                            _abort_test(ctx, hw, "3 WELD FAULT CYCLES DETECTED")
+                b.custom_action("Check Weld Fault", check_weld_fault)
+                
+                # 6. Wait OFF Time (Dynamic off_delay)
+                def dynamic_wait_off(ctx, hw):
+                    delay = int(ctx.get_runtime_value("off_delay", 10))
+                    import time
+                    for s in range(delay, 0, -1):
+                        if ctx.cancel_event.is_set():
+                            break
+                        ctx.update_status(f"Waiting OFF time: {s}s...")
+                        time.sleep(1)
+                b.custom_action("Wait OFF Time", dynamic_wait_off)
+                
             return cycle_logic
 
         def is_external(ctx, hw):
@@ -111,7 +143,7 @@ class G3ElectricalEnduranceTest(BaseTest):
         
         # 11. Prompt User to Change Load Vc Ic 0.5PF
         builder.stop_power_sequence(PLCCoil.CONTACTOR_120A_LOAD_BANK_COIL_ADDR)
-        builder.prompt_user("Change Load to 240V 10A 0.5PF", requires_input=False)
+        builder.prompt_user("Change Load to Vc 10A 0.5PF", requires_input=False)
         
         def build_internal_path_pf(b):
             b.loop(4000, make_cycles(0.5))
@@ -164,8 +196,18 @@ class G3ElectricalEnduranceTest(BaseTest):
             final = float(ctx.get_runtime_value("energy_final", 0))
             diff = abs(final - initial)
             g7_res = ctx.get_runtime_value("g7_result", "Skipped")
-            ctx.logger.info(f"G3 Test Completed. Energy difference: {diff}. G7 Result: {g7_res}. Coagulated Result: PASS")
+            weld_faults = ctx.get_runtime_value("total_weld_fault_cycles", 0)
+            open_faults = ctx.get_runtime_value("total_open_fault_cycles", 0)
+            
+            ctx.logger.info(f"G3 Test Completed. Energy diff: {diff:.2f}, Weld Faults: {weld_faults}, Open Faults: {open_faults}, G7: {g7_res}. Result: PASS")
+            
+            ctx.test_results["energy_difference"] = diff
+            ctx.test_results["g7_result"] = g7_res
+            ctx.test_results["weld_faults"] = weld_faults
+            ctx.test_results["open_faults"] = open_faults
             ctx.test_results["success"] = True
+            
         except ValueError:
             ctx.logger.error("Test Failed: Invalid energy values entered.")
             ctx.test_results["success"] = False
+            ctx.test_results["failure_reason"] = "Invalid energy values"

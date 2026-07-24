@@ -27,6 +27,7 @@ class TestRunner(QThread):
         super().__init__()
         self.test = test_instance
         self.context = context
+        self.context.test_identifier = getattr(self.test, "test_identifier", "unknown")
         self.context._prompt_callback = self._emit_prompt
         self.context._status_callback = self.on_status_update.emit
         self.context._progress_callback = self.on_progress_update.emit

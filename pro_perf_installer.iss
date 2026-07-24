@@ -1,16 +1,17 @@
 ; Inno Setup Script for Pro-Perf application
 ; Defines parameters for the Windows Installer
+#define MyAppVersion "1.2.3"
 
 [Setup]
 AppId={{5D8B8497-2DF0-4FA9-A1B9-724FE35FCE99}}
 AppName=Pro-Perf
-AppVersion=1.0.8
+AppVersion={#MyAppVersion}
 AppPublisher=L S Control Systems
 DefaultDirName={autopf}\Pro-Perf
 DefaultGroupName=Pro-Perf
 DisableProgramGroupPage=yes
 OutputDir=.
-OutputBaseFilename=Pro-Perf-Setup
+OutputBaseFilename=Pro-Perf-Setup-{#MyAppVersion}
 SetupIconFile=ui\resources\icons\app_icon.ico
 Compression=lzma
 SolidCompression=yes

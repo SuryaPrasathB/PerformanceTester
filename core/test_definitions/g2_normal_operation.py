@@ -29,14 +29,18 @@ class G2NormalOperationTest(BaseTest):
             # 7. Close Meter Load Switch
             sub_builder.send_meter_command("close_load_switch")
             
+            sub_builder.wait(5)
             # 8. Measure Current > 0
             sub_builder.measure_current(min_val=0.1, max_val=100.0)
+            sub_builder.wait(5)
             
             # 9. Open Load Switch
             sub_builder.send_meter_command("open_load_switch")
             
+            sub_builder.wait(5)
             # 10. Measure Current == 0
             sub_builder.measure_current(min_val=0.0, max_val=0.05)
+            sub_builder.wait(5)
             
         builder.loop(3, loop_body)
         

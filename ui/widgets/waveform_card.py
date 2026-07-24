@@ -8,9 +8,11 @@ from ui.widgets.waveform_graph import WaveformGraph
 class WaveformPreview(QFrame):
     """Simple miniature preview canvas displaying only the waveform line."""
     
-    def __init__(self, data, parent=None):
+    def __init__(self, data, start_idx=0, end_idx=None, parent=None):
         super().__init__(parent)
         self.data = data
+        self.start_idx = start_idx
+        self.end_idx = end_idx if end_idx is not None else (len(data[0]) if isinstance(data, list) and len(data) > 0 and isinstance(data[0], list) else len(data))
         self.setStyleSheet("background-color: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 4px;")
         self.setMinimumHeight(100)
         self.setMinimumWidth(150)
@@ -25,6 +27,13 @@ class WaveformPreview(QFrame):
             data_b = self.data[1]
 
         if not data_a or len(data_a) < 2:
+            return
+            
+        data_a = data_a[self.start_idx:self.end_idx]
+        if data_b:
+            data_b = data_b[self.start_idx:self.end_idx]
+            
+        if len(data_a) < 2:
             return
             
         painter = QPainter(self)
@@ -160,8 +169,25 @@ class WaveformCard(QFrame):
         self.lbl_title.setStyleSheet("font-weight: bold; color: #1E293B; font-size: 12px;")
         layout.addWidget(self.lbl_title)
         
+        # Calculate zoomed indices using WaveformGraph logic
+        start_idx = 0
+        end_idx = None
+        try:
+            # Instantiate dummy graph to borrow the robust detection logic
+            graph = WaveformGraph()
+            graph.set_data(data, timebase, range_val)
+            if graph.view_end_time_ms > 0:
+                start_idx = max(0, int(graph.view_start_time_ms / graph.interval_ms))
+                end_idx = min(len(data_a), int(graph.view_end_time_ms / graph.interval_ms))
+                # Add a tiny bit of extra padding for the minimap specifically
+                pad = max(2, int((end_idx - start_idx) * 0.1))
+                start_idx = max(0, start_idx - pad)
+                end_idx = min(len(data_a), end_idx + pad)
+        except Exception as e:
+            print(f"Error calculating zoom for minimap: {e}")
+        
         # Graph takes up the most space
-        self.preview = WaveformPreview(data, self)
+        self.preview = WaveformPreview(data, start_idx, end_idx, self)
         layout.addWidget(self.preview, stretch=1)
         
         # PF label below the graph

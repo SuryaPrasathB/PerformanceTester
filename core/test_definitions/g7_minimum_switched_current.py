@@ -38,26 +38,26 @@ class G7MinimumSwitchedCurrentTest(BaseTest):
             # 6. Close load switch.
             b.send_meter_command("close_load_switch")
             
-            # Wait 2 seconds for the switch to mechanically close and current to establish
-            b.wait(2)
+            # Wait 5 seconds for the switch to mechanically close and current to establish
+            b.wait(5)
             
             # Verify current is above 10 mA (0.010 A)
             b.measure_current(0.010, 100.0)
             
-            # 7. Delay remaining 8 seconds (total 10s as before).
-            b.wait(8)
+            # 7. Delay remaining 5 seconds (total 10s as before).
+            b.wait(5)
             
             # 8. Open load switch.
             b.send_meter_command("open_load_switch")
             
-            # Wait 2 seconds for the switch to mechanically open and current to drop
-            b.wait(2)
+            # Wait 5 seconds for the switch to mechanically open and current to drop
+            b.wait(5)
             
             # Verify current is near zero (less than 0.3 mA = 0.0003 A)
             b.measure_current(0.0, 0.0003)
             
-            # 9. Delay remaining 18 seconds (total 20s as before).
-            b.wait(18)
+            # 9. Delay remaining 15 seconds (total 20s as before).
+            b.wait(15)
 
         builder.loop(10, switched_current_loop)
         

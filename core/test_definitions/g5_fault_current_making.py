@@ -70,7 +70,20 @@ class G5FaultCurrentMakingTest(BaseTest):
             # 22. Notify PLC that the test is starting (FCMC_TEST_START = 0x00).
             b.set_plc_coil(PLCCoil.FCMC_TEST_START, True)
             
-            # 23. Start capturing PicoScope waveform.
+            # 23. Auto-configure PicoScope Range based on category
+            def configure_picoscope_g5(ctx, hw):
+                cat = str(ctx.get_runtime_value("meter_category", "U2")).strip().upper()
+                pico = hw.picoscope
+                if pico:
+                    # For G5: High current loads. Assuming 2.5kA/3kA will peak around 5V.
+                    # 8 = +/- 5V. Adjust if they need more headroom (9 = +/- 10V).
+                    # Since they mentioned 6kA = 10V, 3kA will be ~5V.
+                    range_idx = 8 if cat == "U2" else 9 
+                    pico.set_channel_ranges(10, range_idx)
+                    ctx.logger.info(f"Dynamically set PicoScope Channel B to {range_idx} for {cat}")
+            b.custom_action("Auto-Configure PicoScope Range", configure_picoscope_g5)
+
+            # 23b. Start capturing PicoScope waveform.
             b.custom_action("Start PicoScope Capture", lambda ctx, hw: getattr(hw, "start_waveform_capture", lambda: ctx.logger.info("Started Waveform Capture"))())
             
             # 24. Close load switch.

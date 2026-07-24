@@ -460,10 +460,13 @@ class TestPage(QWidget, Ui_TestPage):
         title_text = "USER INPUT REQUIRED" if requires_input else "ACTION REQUIRED"
         text_color = "#F8FAFC" if is_dark else "#0F172A"
         
+        # Replace python newlines with HTML breaks since this is rendered as rich text
+        formatted_message = message.replace('\n', '<br>')
+        
         html_prompt = f"""
         <div align='center' style='line-height: 140%;'>
             <span style='font-size: 13px; color: {sec_color}; font-weight: bold; letter-spacing: 1.5px;'>{title_text}</span><br>
-            <span style='font-size: 28px; color: {text_color}; font-weight: 800;'>{message}</span>
+            <span style='font-size: 28px; color: {text_color}; font-weight: 800;'>{formatted_message}</span>
         </div>
         """
         self.lbl_instruction.setText(html_prompt)
