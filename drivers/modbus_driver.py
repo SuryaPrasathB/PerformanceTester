@@ -279,7 +279,10 @@ class ModbusDriver(BaseDriver):
                     else:
                         res = 240.2 + random.uniform(-1.0, 1.0)
                 elif address in (40003, 2):
-                    res = 5.15 + random.uniform(-0.1, 0.1)
+                    if getattr(self, "_mock_load_switch_open", False):
+                        res = 0.0
+                    else:
+                        res = 5.15 + random.uniform(-0.1, 0.1)
                 elif address in (40005, 4):
                     res = 0.98 + random.uniform(-0.01, 0.01)
                 else:

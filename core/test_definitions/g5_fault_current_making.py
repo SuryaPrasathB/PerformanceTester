@@ -13,9 +13,8 @@ class G5FaultCurrentMakingTest(BaseTest):
         builder.stop_power_sequence(PLCCoil.CONTACTOR_120A_LOAD_BANK_COIL_ADDR)
         builder.prompt_user("Set load to Vc Ic UPF", requires_input=False)
         
-        # 2. Turn ON ACB (PLC Coil ACB_COIL_ADDR = 0x03).
-        # 3. Delay as required.
-
+        # 2-4. Turn ON ACB -> Delay -> Turn ON 120A Contactor (Required for Ic load)
+        builder.start_power_sequence(PLCCoil.CONTACTOR_120A_LOAD_BANK_COIL_ADDR)
         
         # 6. Prompt user to enter Initial Energy Value.
         builder.prompt_user("Enter Initial Energy Value", requires_input=True, save_as="energy_initial")
@@ -23,10 +22,11 @@ class G5FaultCurrentMakingTest(BaseTest):
         # Helper loop generator
         def g5_loop(b, i):
             if i > 0:
-                # Turn OFF power from previous iteration's high current test
-                b.stop_power_sequence(PLCCoil.CONTACTOR_120A_LOAD_BANK_COIL_ADDR)
                 # Revert to safe load configuration for Pre-fusing
                 b.prompt_user("Set load to Vc Ic UPF", requires_input=False)
+                # Turn ON 120A Contactor for Ic pre-fusing (ACB is already ON)
+                b.set_plc_coil(PLCCoil.CONTACTOR_120A_LOAD_BANK_COIL_ADDR, True)
+                b.verify_plc_coil_status(PLCCoil.CONTACTOR_120A_STATUS, "120A Contactor")
 
             # --- Pre-fusing (Steps 7-13) ---
             # 7. Close load switch.
@@ -45,8 +45,9 @@ class G5FaultCurrentMakingTest(BaseTest):
             # Measure current already logs errors, we proceed for now.
             b.custom_action("Validate Pre-fusing Result", lambda ctx, hw: ctx.logger.info("Pre-fusing validated."))
             
-            # 14. Turn OFF ACB and Contactor.
-            b.stop_power_sequence(PLCCoil.CONTACTOR_120A_LOAD_BANK_COIL_ADDR)
+            # 14. Turn OFF Contactor & SCR for High Current test (Keep ACB ON).
+            b.set_plc_coil(PLCCoil.SCR_COIL_ADDR, False)
+            b.set_plc_coil(PLCCoil.CONTACTOR_120A_LOAD_BANK_COIL_ADDR, False)
             
             # 16. Prompt user to select meter category (U2 or U3) using two selection buttons.
             if i == 0:
@@ -62,14 +63,6 @@ class G5FaultCurrentMakingTest(BaseTest):
                     ctx.prompt_user_action("Set load to Vc, 2.5 kA, 0.8 PF", False)
             b.custom_action(f"Prompt for Load Configuration (Iteration {i+1})", prompt_category_load)
             
-            # 19. Turn ON ACB (PLC Coil ACB_COIL_ADDR = 0x03).
-            # 20. Delay as required.
-            # 21. Turn ON SCR for high current test.
-            b.set_plc_coil(PLCCoil.SCR_COIL_ADDR, True)  # SCR required for high current (>120A)
-            
-            # 22. Notify PLC that the test is starting (FCMC_TEST_START = 0x00).
-            b.set_plc_coil(PLCCoil.FCMC_TEST_START, True)
-            
             # 23. Auto-configure PicoScope Range based on category
             def configure_picoscope_g5(ctx, hw):
                 cat = str(ctx.get_runtime_value("meter_category", "U2")).strip().upper()
@@ -82,19 +75,40 @@ class G5FaultCurrentMakingTest(BaseTest):
                     pico.set_channel_ranges(10, range_idx)
                     ctx.logger.info(f"Dynamically set PicoScope Channel B to {range_idx} for {cat}")
             b.custom_action("Auto-Configure PicoScope Range", configure_picoscope_g5)
+            
+            # 19-21. Turn ON SCR and notify PLC that the test is starting (FCMC_TEST_START = 0x00).
+            # Note: High Current test keeps 120A Contactor OFF (turned off by step 14).
+            b.set_plc_coil(PLCCoil.SCR_COIL_ADDR, True)  # SCR required for high current (>120A)
+            b.set_plc_coil(PLCCoil.FCMC_TEST_START, True)
 
-            # 23b. Start capturing PicoScope waveform.
-            b.custom_action("Start PicoScope Capture", lambda ctx, hw: getattr(hw, "start_waveform_capture", lambda: ctx.logger.info("Started Waveform Capture"))())
+            # Start capturing PicoScope waveform before setting test coils.
+            def start_pico_fcmc(ctx, hw):
+                delay = 0
+                if hw.picoscope and hasattr(hw.picoscope, 'fcmc_capture_delay_ms'):
+                    if getattr(hw.picoscope, 'trigger_mode', 'manual') != 'auto':
+                        delay = hw.picoscope.fcmc_capture_delay_ms
+                
+                if delay > 0:
+                    ctx.logger.info(f"Shifting capture start by {delay}ms for FCMC...")
+                    time.sleep(delay / 1000.0)
+                    
+                getattr(hw, "start_waveform_capture", lambda: ctx.logger.info("Started Waveform Capture"))()
+                
+            b.custom_action("Start PicoScope Capture", start_pico_fcmc)
             
             # 24. Close load switch.
             b.send_meter_command("close_load_switch")
-            
+
             # 25. After 20 ms, stop waveform capture and save the waveform.
+            #     Wait an additional 80 ms to ensure ~100 ms total between close and open load switch.
             def wait_and_stop_capture(ctx, hw):
                 time.sleep(0.02)
                 getattr(hw, "stop_waveform_capture", lambda: ctx.logger.info("Stopped and Saved Waveform Capture"))()
+                time.sleep(0.08)
                 
-            b.custom_action("Wait 20ms and Stop Capture", wait_and_stop_capture)
+            b.custom_action("Stop Capture", wait_and_stop_capture)
+
+            b.send_meter_command("open_load_switch")
             
             # 26. Delay 1 minute.
             b.wait(60)
@@ -105,6 +119,7 @@ class G5FaultCurrentMakingTest(BaseTest):
         # Revert to safe load configuration before final verification
         builder.stop_power_sequence(PLCCoil.CONTACTOR_120A_LOAD_BANK_COIL_ADDR)
         builder.prompt_user("Set load to Vc Ic UPF", requires_input=False)
+        builder.start_power_sequence(PLCCoil.CONTACTOR_120A_LOAD_BANK_COIL_ADDR)
 
         # 27. Close Meter Load Switch
         builder.send_meter_command("close_load_switch")

@@ -44,6 +44,9 @@
       "timebase": 15,
       "enable_channel_a": false,
       "capture_delay_ms": 0,
+      "fcmc_capture_delay_ms": 0,
+      "trigger_mode": "auto",
+      "trigger_threshold_adc": 1000,
       "mock": true
     }
   ],

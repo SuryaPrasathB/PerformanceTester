@@ -236,6 +236,20 @@ class TestPage(QWidget, Ui_TestPage):
             
         test_instance = test_class()
 
+        # Check if test requires PicoScope and if PicoScope is connected
+        if getattr(test_instance, "requires_picoscope", False):
+            pico_drv = self.device_manager.drivers.get("PicoScope1")
+            if not pico_drv or not pico_drv.is_connected:
+                from PySide6.QtWidgets import QMessageBox
+                QMessageBox.critical(
+                    self, 
+                    "PicoScope Not Connected", 
+                    f"The selected test ({test_instance.name if hasattr(test_instance, 'name') else test_class_name}) requires a PicoScope oscilloscope.\n\n"
+                    "PicoScope is currently not connected. Please connect the PicoScope device before starting this test."
+                )
+                self.main_window.append_log("ERROR", f"Cannot start {test_class_name}: PicoScope is not connected.")
+                return
+
         # Clear existing waveform cards
         if hasattr(self, 'dynamic_cards'):
             for card in self.dynamic_cards:
@@ -424,10 +438,15 @@ class TestPage(QWidget, Ui_TestPage):
             color = "#64748B" # Slate
             
         calculated_pf_str = ""
+        measured_curr_str = ""
         if self.test_runner and isinstance(self.test_runner.context.test_results, dict):
             calc_pf = self.test_runner.context.test_results.get("calculated_pf")
             if calc_pf is not None:
                 calculated_pf_str = f"<br><span style='font-size: 16px; color: {text_color};'>Calculated PF: <span style='font-weight: bold; color: #10B981;'>{calc_pf:.3f}</span></span>"
+            
+            meas_curr = self.test_runner.context.test_results.get("measured_current")
+            if meas_curr is not None:
+                measured_curr_str = f"<br><span style='font-size: 16px; color: {text_color};'>Measured Current: <span style='font-weight: bold; color: #F59E0B;'>{meas_curr:.1f} A</span></span>"
                 
         failure_reason_str = ""
         if result != "PASS" and self.test_runner and getattr(self.test_runner, "failure_reason", None):
@@ -438,11 +457,12 @@ class TestPage(QWidget, Ui_TestPage):
         <div align='center' style='line-height: 140%;'>
             <span style='font-size: 14px; color: {sec_color}; font-weight: bold; letter-spacing: 1px;'>TEST SEQUENCE ENDED</span><br>
             <span style='font-size: 34px; color: {color}; font-weight: 800; letter-spacing: 0.5px;'>{result}</span><br>
-            <span style='font-size: 16px; color: {text_color};'>Meter Serial: <span style='font-weight: bold;'>{serial}</span></span>{calculated_pf_str}{failure_reason_str}
+            <span style='font-size: 16px; color: {text_color};'>Meter Serial: <span style='font-weight: bold;'>{serial}</span></span>{calculated_pf_str}{measured_curr_str}{failure_reason_str}
         </div>
         """
         self.lbl_instruction.setText(html)
         self.lbl_instruction.setStyleSheet("")
+
 
     @Slot(str, bool)
     def prompt_user_action(self, message: str, requires_input: bool):
@@ -535,6 +555,61 @@ class TestPage(QWidget, Ui_TestPage):
                 self.horizontalLayout_input.insertWidget(idx + 2, btn_continue)
                 
                 self.dynamic_buttons.extend([btn_skip, btn_continue])
+            elif "pass or fail" in message.lower():
+                self.input_instruction.hide()
+                self.btn_done.hide()
+                
+                html_cat = f"""
+                <div align='center' style='line-height: 140%;'>
+                    <span style='font-size: 13px; color: {sec_color}; font-weight: bold; letter-spacing: 1.5px;'>{title_text}</span><br>
+                    <span style='font-size: 28px; color: {text_color}; font-weight: 800;'>{message}</span>
+                </div>
+                """
+                self.lbl_instruction.setText(html_cat)
+                
+                from PySide6.QtWidgets import QPushButton
+                btn_pass = QPushButton("Pass")
+                btn_pass.setMinimumSize(120, 45)
+                btn_pass.setStyleSheet("font-size: 16px; font-weight: bold; background-color: #10B981; color: white; border-radius: 8px;")
+                btn_pass.clicked.connect(lambda checked=False, val="Pass": self.resolve_user_action(val))
+                
+                btn_fail = QPushButton("Fail")
+                btn_fail.setMinimumSize(120, 45)
+                btn_fail.setStyleSheet("font-size: 16px; font-weight: bold; background-color: #EF4444; color: white; border-radius: 8px;")
+                btn_fail.clicked.connect(lambda checked=False, val="Fail": self.resolve_user_action(val))
+                
+                idx = self.horizontalLayout_input.indexOf(self.btn_done)
+                self.horizontalLayout_input.insertWidget(idx + 1, btn_pass)
+                self.horizontalLayout_input.insertWidget(idx + 2, btn_fail)
+                
+                self.dynamic_buttons.extend([btn_pass, btn_fail])
+            elif "review cycles" in message.lower():
+                self.input_instruction.hide()
+                self.btn_done.hide()
+                
+                html_cat = f"""
+                <div align='center' style='line-height: 140%;'>
+                    <span style='font-size: 13px; color: {sec_color}; font-weight: bold; letter-spacing: 1.5px;'>{title_text}</span><br>
+                    <span style='font-size: 28px; color: {text_color}; font-weight: 800;'>{message}</span>
+                </div>
+                """
+                self.lbl_instruction.setText(html_cat)
+                
+                from PySide6.QtWidgets import QPushButton
+                btn_continue = QPushButton("Continue")
+                btn_continue.setMinimumSize(120, 45)
+                btn_continue.setStyleSheet("font-size: 16px; font-weight: bold; background-color: #3B82F6; color: white; border-radius: 8px;")
+                btn_continue.clicked.connect(lambda checked=False, val="Continue": self.resolve_user_action(val))
+                
+                idx = self.horizontalLayout_input.indexOf(self.btn_done)
+                self.horizontalLayout_input.insertWidget(idx + 1, btn_continue)
+                
+                self.dynamic_buttons.extend([btn_continue])
+
+                if hasattr(self, 'dynamic_cards'):
+                    for card in self.dynamic_cards:
+                        if hasattr(card, 'set_review_mode'):
+                            card.set_review_mode(True)
             else:
                 self.input_instruction.show()
                 self.input_instruction.clear()
@@ -578,6 +653,11 @@ class TestPage(QWidget, Ui_TestPage):
         if hasattr(self, 'dynamic_buttons'):
             for btn in self.dynamic_buttons:
                 btn.hide()
+                
+        if hasattr(self, 'dynamic_cards'):
+            for card in self.dynamic_cards:
+                if hasattr(card, 'set_review_mode'):
+                    card.set_review_mode(False)
                 
         # Handle default parameter or boolean click value
         if user_val is None or isinstance(user_val, bool):
@@ -760,6 +840,30 @@ class TestPage(QWidget, Ui_TestPage):
         # Hide placeholder label when graphs start appearing
         self.lbl_graphs_placeholder.hide()
         
+        # Determine current test identifier
+        test_id = "unknown"
+        if self.test_runner:
+            test_id = getattr(self.test_runner.test, "test_identifier", "unknown").lower()
+            
+        from ui.widgets.waveform_card import WaveformCard
+        card = WaveformCard(name, data, timebase, range_val, self.frame_graphs_container, test_id=test_id)
+        card.override_requested.connect(self.handle_override_requested)
+        card.redo_requested.connect(self.handle_redo_requested)
+        
+        # Check if card with this name already exists
+        for i, existing_card in enumerate(self.dynamic_cards):
+            if existing_card.name == name:
+                layout_index = self.horizontalLayout_graphs.indexOf(existing_card)
+                self.horizontalLayout_graphs.removeWidget(existing_card)
+                existing_card.deleteLater()
+                if layout_index >= 0:
+                    self.horizontalLayout_graphs.insertWidget(layout_index, card)
+                else:
+                    self.horizontalLayout_graphs.addWidget(card)
+                self.dynamic_cards[i] = card
+                self.frame_graphs_container.show()
+                return
+        
         # Limit the number of graphs to at most 3
         if len(self.dynamic_cards) >= 3:
             oldest_card = self.dynamic_cards.pop(0)
@@ -768,15 +872,51 @@ class TestPage(QWidget, Ui_TestPage):
             
         self.frame_graphs_container.show()
             
-        # Determine current test identifier
-        test_id = "unknown"
-        if self.test_runner:
-            test_id = getattr(self.test_runner.test, "test_identifier", "unknown").lower()
-            
-        from ui.widgets.waveform_card import WaveformCard
-        card = WaveformCard(name, data, timebase, range_val, self.frame_graphs_container, test_id=test_id)
         self.horizontalLayout_graphs.addWidget(card)
         self.dynamic_cards.append(card)
+
+    @Slot(dict)
+    def handle_override_requested(self, data: dict):
+        if not self.test_runner:
+            return
+            
+        test_id = data.get('test_id', 'unknown')
+        pf = data.get('pf')
+        curr = data.get('current')
+        pixmap = data.get('pixmap')
+        
+        # Update context
+        self.test_runner.context.test_results['calculated_pf'] = pf
+        self.test_runner.context.test_results['measured_current'] = curr
+        
+        # Save image
+        if pixmap:
+            import os
+            graphs_dir = "logs/graphs"
+            os.makedirs(graphs_dir, exist_ok=True)
+            session_id = self.test_runner.context.db_row_id
+            if session_id:
+                file_path = os.path.join(graphs_dir, f"session_{session_id}_{test_id}.png")
+                pixmap.save(file_path)
+                
+        # We don't have to manually update DB here because DB only saves pass/fail in the schema right now.
+        # But if the test is done, the UI summary might need a refresh.
+        self.update_status_text("Override Saved!")
+
+    @Slot(str)
+    def handle_redo_requested(self, card_name: str):
+        if not self.test_runner:
+            return
+            
+        import re
+        match = re.search(r'\d+', card_name)
+        if match:
+            # We assume card names are "Waveform 1", "Waveform 2", etc.
+            cycle_idx = match.group(0)
+            self.resolve_user_action(f"REDO:{cycle_idx}")
+        else:
+            if hasattr(self, 'main_window'):
+                self.main_window.append_log("WARNING", f"Could not determine cycle index from '{card_name}'")
 
     @Slot(int, int)
     def update_cycle_progress(self, current: int, total: int):

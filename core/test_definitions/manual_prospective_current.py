@@ -11,7 +11,7 @@ class ManualProspectiveCurrentTest(BaseTest):
     def build(self, builder: TestBuilder):
         # 1. Prompt User to set Load Vc, (2.5 / 3 / 4.5 / 6) kA, UPF
         builder.stop_power_sequence(PLCCoil.CONTACTOR_120A_LOAD_BANK_COIL_ADDR)
-        builder.prompt_user("Set Load Vc, (2.5 / 3 / 4.5 / 6) kA, UPF. \nEnter Expected Peak Voltage (e.g. 2 for 100A, 20 for 6kA):", requires_input=True, save_as="expected_peak_voltage")
+        builder.prompt_user("Set Load Vc, (2.5 / 3 / 4.5 / 6) kA, UPF. \nEnter Expected Peak Voltage (e.g. 2 for 1kA, 10 for 6kA):", requires_input=True, save_as="expected_peak_voltage")
         
         # Start Power Sequence (ACB -> Delay -> 120A Contactor, NO SCR)
         builder.set_plc_coil(PLCCoil.ACB_COIL_ADDR, True)
@@ -40,7 +40,8 @@ class ManualProspectiveCurrentTest(BaseTest):
         def start_pico_shifted(ctx, hw):
             delay = 0
             if hw.picoscope and hasattr(hw.picoscope, 'capture_delay_ms'):
-                delay = hw.picoscope.capture_delay_ms
+                if getattr(hw.picoscope, 'trigger_mode', 'manual') != 'auto':
+                    delay = hw.picoscope.capture_delay_ms
             
             if delay > 0:
                 ctx.logger.info(f"Shifting capture start by {delay}ms...")

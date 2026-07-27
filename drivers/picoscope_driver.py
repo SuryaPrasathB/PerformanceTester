@@ -60,6 +60,19 @@ if ps2000:
     
     ps2000.ps2000_set_trigger.argtypes = [c_short, c_short, c_short, c_short, c_short, c_short]
     ps2000.ps2000_set_trigger.restype = c_short
+    
+    try:
+        ps2000.ps2000SetAdvTriggerChannelDirections.argtypes = [c_short, c_int32, c_int32, c_int32, c_int32, c_int32]
+        ps2000.ps2000SetAdvTriggerChannelDirections.restype = c_short
+    except AttributeError:
+        # Advanced trigger might not be available in older DLLs
+        pass
+        
+# Advanced Trigger Direction Constants
+PS2000_ADV_NONE = 0
+PS2000_ADV_RISING = 2
+PS2000_ADV_FALLING = 3
+PS2000_ADV_RISING_OR_FALLING = 4
 
 
 class PicoScopeDriver(BaseDriver):
@@ -79,6 +92,9 @@ class PicoScopeDriver(BaseDriver):
         self.enable_channel_a = config.get("enable_channel_a", True)
         self.enable_channel_b = config.get("enable_channel_b", True)
         self.capture_delay_ms = config.get("capture_delay_ms", 0)
+        self.fcmc_capture_delay_ms = config.get("fcmc_capture_delay_ms", 0)
+        self.trigger_mode = config.get("trigger_mode", "manual")  # "auto" or "manual"
+        self.trigger_threshold_adc = config.get("trigger_threshold_adc", 1000)
         self.mock_mode = config.get("mock", False)
 
     def connect(self) -> bool:
@@ -90,11 +106,9 @@ class PicoScopeDriver(BaseDriver):
             return True
 
         if not ps2000:
-            self.logger.warning("PicoScope: ps2000.dll unavailable. Forcing Mock Mode connection.")
-            self.mock_mode = True
-            self.handle = 999
-            self.is_connected = True
-            return True
+            self.logger.warning("PicoScope: ps2000.dll unavailable. PicoScope is not connected.")
+            self.is_connected = False
+            return False
 
         self.logger.info(f"PicoScope: Connecting on {self.port}...")
         try:
@@ -110,17 +124,15 @@ class PicoScopeDriver(BaseDriver):
                 ps2000.ps2000_set_channel(self.handle, 1, 1 if self.enable_channel_b else 0, 1, self.range_b_index)
                 return True
             else:
-                self.logger.error("PicoScope: Failed to open device unit. Falling back to Mock Mode.")
-                self.mock_mode = True
-                self.handle = 999
-                self.is_connected = True
-                return True
+                self.logger.error("PicoScope: Failed to open device unit. PicoScope is not connected.")
+                self.handle = 0
+                self.is_connected = False
+                return False
         except Exception as e:
-            self.logger.error(f"PicoScope: Exception during connection: {e}. Falling back to Mock Mode.")
-            self.mock_mode = True
-            self.handle = 999
-            self.is_connected = True
-            return True
+            self.logger.error(f"PicoScope: Exception during connection: {e}. PicoScope is not connected.")
+            self.handle = 0
+            self.is_connected = False
+            return False
 
     def disconnect(self) -> bool:
         """Closes the connection to PicoScope."""
@@ -168,10 +180,31 @@ class PicoScopeDriver(BaseDriver):
             
         if ps2000:
             try:
-                # Disable hardware trigger (Auto-trigger immediately)
-                # We cannot use a hardware trigger because the pulse can be negative or positive,
-                # and PS2000 does not support dual-edge window triggers.
-                ps2000.ps2000_set_trigger(self.handle, 5, 0, 0, 0, 0)
+                if self.trigger_mode == "auto":
+                    self.logger.info("PicoScope: Configuring Auto Capture Mode (Advanced Dual-Edge Hardware Trigger)")
+                    # The basic trigger must still be configured, usually as a baseline, 
+                    # but we override the direction with Advanced Trigger.
+                    # We trigger on Channel B if enabled, else Channel A.
+                    # source: 0=A, 1=B, 2=C, 3=D, 4=EXT, 5=NONE
+                    trigger_source = 1 if self.enable_channel_b else 0
+                    
+                    # Set standard trigger properties (delay=-30 for 30% pre-trigger, auto_trigger_ms=0 for strict wait)
+                    ps2000.ps2000_set_trigger(self.handle, trigger_source, self.trigger_threshold_adc, 0, -30, 0)
+                    
+                    # Override with Advanced Directions for dual-edge
+                    dirA = PS2000_ADV_RISING_OR_FALLING if trigger_source == 0 else PS2000_ADV_NONE
+                    dirB = PS2000_ADV_RISING_OR_FALLING if trigger_source == 1 else PS2000_ADV_NONE
+                    
+                    if hasattr(ps2000, "ps2000SetAdvTriggerChannelDirections"):
+                        ps2000.ps2000SetAdvTriggerChannelDirections(
+                            self.handle, dirA, dirB, PS2000_ADV_NONE, PS2000_ADV_NONE, PS2000_ADV_NONE
+                        )
+                else:
+                    self.logger.info("PicoScope: Configuring Manual Capture Mode (Immediate Auto-trigger)")
+                    # Disable hardware trigger (Auto-trigger immediately)
+                    # We cannot use a hardware trigger because the pulse can be negative or positive,
+                    # and PS2000 does not support dual-edge window triggers in basic API.
+                    ps2000.ps2000_set_trigger(self.handle, 5, 0, 0, 0, 0)
                 
                 time_indisposed_ms = c_int32(0)
                 status = ps2000.ps2000_run_block(
@@ -295,6 +328,9 @@ class PicoScopeDriver(BaseDriver):
         cut_ms = 10.0 - duration_ms
         cut_s = cut_ms / 1000.0
         
+        # Simulate trigger point at 20% of the buffer
+        pre_trigger_samples = int(self.no_of_values * 0.2)
+        
         for i in range(self.no_of_values):
             t = i * interval_s
             
@@ -302,18 +338,26 @@ class PicoScopeDriver(BaseDriver):
             val_v = peak_voltage * math.sin(2 * math.pi * f * t)
             voltage_data.append(val_v)
             
-            # Channel B: Current (phase cut sine wave)
-            # Find time within current half cycle
-            half_cycle_t = t % 0.010
-            
-            if half_cycle_t < cut_s:
-                # Flatline (with minor noise)
+            # Channel B: Current
+            if i < pre_trigger_samples:
+                # Pre-trigger flatline (contactor open)
                 current = random.uniform(-0.1, 0.1)
             else:
-                # Conduction (sine wave)
-                current = peak_current * math.sin(2 * math.pi * f * t)
-                # Add minor background noise
-                current += random.uniform(-0.3, 0.3)
+                # Post-trigger surge (contactor closed)
+                # Offset t so the sine wave starts at the trigger point
+                t_surge = (i - pre_trigger_samples) * interval_s
+                
+                # Only produce the surge for one half-cycle (10ms)
+                if t_surge < 0.010:
+                    half_cycle_t = t_surge
+                    if half_cycle_t < cut_s:
+                        current = random.uniform(-0.1, 0.1)
+                    else:
+                        current = peak_current * math.sin(2 * math.pi * f * t_surge)
+                        current += random.uniform(-0.3, 0.3)
+                else:
+                    # Post-surge flatline
+                    current = random.uniform(-0.1, 0.1)
                 
             current_data.append(current)
             

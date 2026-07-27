@@ -153,7 +153,7 @@ class Launcher:
         
     def run(self):
         """Shows the main window and executes the Qt application loop."""
-        self.main_window.show()
+        self.main_window.showMaximized()
         self.splash.finish(self.main_window)
         # Automatically trigger connect on start based on requirements (Attempt connections)
         self.device_manager.connect_all()

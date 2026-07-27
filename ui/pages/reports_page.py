@@ -5,9 +5,9 @@ from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel,
                                 QLineEdit, QComboBox, QPushButton, QTableWidget, 
                                 QTableWidgetItem, QHeaderView, QFrame, QDialog,
                                 QTextEdit, QFileDialog, QMessageBox, QSpacerItem,
-                                QSizePolicy)
-from PySide6.QtCore import Qt, Slot
-from PySide6.QtGui import QColor, QFont, QTextDocument, QPageSize, QPageLayout
+                                QSizePolicy, QScrollArea)
+from PySide6.QtCore import Qt, Slot, QSize
+from PySide6.QtGui import QColor, QFont, QTextDocument, QPageSize, QPageLayout, QPixmap
 
 class TestDetailsDialog(QDialog):
     """
@@ -70,12 +70,75 @@ class TestDetailsDialog(QDialog):
         # Footer Action Button
         btn_layout = QHBoxLayout()
         btn_layout.addStretch()
+        
+        self.btn_view_graphs = QPushButton("View Captured Graphs", self)
+        self.btn_view_graphs.setStyleSheet("background-color: #3B82F6; color: white; font-weight: bold;")
+        self.btn_view_graphs.clicked.connect(self.view_graphs)
+        btn_layout.addWidget(self.btn_view_graphs)
+        
+        # Check if graphs exist
+        import os
+        graphs_dir = "logs/graphs"
+        has_graphs = False
+        if os.path.exists(graphs_dir):
+            for file in os.listdir(graphs_dir):
+                if file.startswith(f"session_{self.session_data.get('id')}_") and file.endswith(".png"):
+                    has_graphs = True
+                    break
+        self.btn_view_graphs.setVisible(has_graphs)
+        
         btn_close = QPushButton("Close", self)
         btn_close.clicked.connect(self.accept)
         btn_layout.addWidget(btn_close)
         layout.addLayout(btn_layout)
         
         self.apply_theme()
+        
+    def view_graphs(self):
+        import os
+        graphs_dir = "logs/graphs"
+        images = []
+        if os.path.exists(graphs_dir):
+            for file in os.listdir(graphs_dir):
+                if file.startswith(f"session_{self.session_data.get('id')}_") and file.endswith(".png"):
+                    images.append(os.path.join(graphs_dir, file))
+                    
+        if not images:
+            return
+            
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Captured Waveform Graphs")
+        dialog.setMinimumSize(800, 600)
+        
+        layout = QVBoxLayout(dialog)
+        scroll = QScrollArea(dialog)
+        scroll.setWidgetResizable(True)
+        
+        container = QWidget()
+        vbox = QVBoxLayout(container)
+        
+        for img_path in images:
+            test_name = os.path.basename(img_path).split('_')[-1].replace('.png', '').upper()
+            lbl_title = QLabel(f"{test_name} Waveform")
+            lbl_title.setStyleSheet("font-size: 16px; font-weight: bold; margin-top: 15px;")
+            vbox.addWidget(lbl_title)
+            
+            lbl_img = QLabel()
+            pixmap = QPixmap(img_path)
+            # Scale to fit window width roughly
+            scaled_pixmap = pixmap.scaledToWidth(750, Qt.SmoothTransformation)
+            lbl_img.setPixmap(scaled_pixmap)
+            vbox.addWidget(lbl_img)
+            
+        vbox.addStretch()
+        scroll.setWidget(container)
+        layout.addWidget(scroll)
+        
+        btn_close = QPushButton("Close", dialog)
+        btn_close.clicked.connect(dialog.accept)
+        layout.addWidget(btn_close)
+        
+        dialog.exec()
         
     def load_run_history(self):
         runs = self.db.get_test_run_details(self.session_data.get("id"))
@@ -570,10 +633,11 @@ class ReportsPage(QWidget):
                     </tr>
                 """
                 if reason:
+                    label = "Details:" if "Measurements:" in reason else "Error Details:"
                     html += f"""
                         <tr>
                             <td colspan="4" class="reason">
-                                <b>Error Details:</b> {reason}
+                                <b>{label}</b> {reason}
                             </td>
                         </tr>
                     """
@@ -596,6 +660,29 @@ class ReportsPage(QWidget):
                     </td>
                 </tr>
             </table>
+            """
+            
+        # Append waveform graphs
+        import os
+        graphs_dir = "logs/graphs"
+        if os.path.exists(graphs_dir):
+            for file in os.listdir(graphs_dir):
+                if file.startswith(f"session_{session_id}_") and file.endswith(".png"):
+                    img_path = os.path.abspath(os.path.join(graphs_dir, file)).replace('\\', '/')
+                    test_name = file.split('_')[-1].replace('.png', '').upper()
+                    
+                    html += f"""
+                    <div style="page-break-before: always;"></div>
+                    <div class="section-title">{test_name} Captured Waveform</div>
+                    <table width="100%" cellpadding="0" cellspacing="0" style="margin-top: 5px; margin-bottom: 10px;">
+                        <tr><td height="1" bgcolor="#E2E8F0" style="font-size: 1px; line-height: 1px;">&nbsp;</td></tr>
+                    </table>
+                    <div style="text-align: center; margin-top: 20px;">
+                        <img src="file:///{img_path}" style="max-width: 100%;" />
+                    </div>
+                    """
+                    
+        html += """
         </body>
         </html>
         """

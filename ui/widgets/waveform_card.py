@@ -1,6 +1,7 @@
 import math
 from PySide6.QtWidgets import QFrame, QVBoxLayout, QHBoxLayout, QLabel, QDialog, QPushButton, QGraphicsDropShadowEffect
-from PySide6.QtCore import Qt, QPoint
+from PySide6.QtCore import Qt, QPoint, Signal, QTimer
+from PySide6.QtGui import QPainter, QColor, QPen, QCursor, QFont
 from PySide6.QtGui import QPainter, QColor, QPen, QCursor, QFont
 
 from ui.widgets.waveform_graph import WaveformGraph
@@ -105,6 +106,10 @@ class WaveformCard(QFrame):
     Card UI widget containing a title, miniature preview, and click-to-analyze 
     trigger that opens the detailed analysis view in a QDialog.
     """
+    override_requested = Signal(dict)
+    redo_requested = Signal(str)
+    
+    _active_dialog = None
     
     def __init__(self, name, data, timebase, range_val, parent=None, test_id="unknown"):
         super().__init__(parent)
@@ -114,9 +119,11 @@ class WaveformCard(QFrame):
         self.range_val = range_val
         self.test_id = test_id.lower() if test_id else "unknown"
         
-        # Calculate PF if dual channels are present and it's not G5 test
+        # Calculate PF and Measured Current if dual channels are present and it's not G5 test
         self.calculated_pf = None
         self.pulse_duration = None
+        self.measured_current = None
+        self.peak_voltage = None
         
         data_a = self.data
         data_b = None
@@ -126,19 +133,25 @@ class WaveformCard(QFrame):
             
         if data_b and self.test_id != "g5":
             try:
-                from core.waveform_analyzer import calculate_pulse_duration, calculate_pf_from_duration
+                from core.waveform_analyzer import calculate_pulse_duration, calculate_pf_from_duration, calculate_peak_voltage, calculate_measured_current
                 duration_ms = calculate_pulse_duration(data_b, timebase)
                 if duration_ms > 0.0:
                     self.pulse_duration = duration_ms
                     self.calculated_pf = calculate_pf_from_duration(duration_ms)
+                
+                self.peak_voltage = calculate_peak_voltage(data_b)
+                self.measured_current = calculate_measured_current(self.peak_voltage)
             except Exception:
                 pass
+
         
         self.setCursor(QCursor(Qt.PointingHandCursor))
         self.setFrameShape(QFrame.StyledPanel)
         self.setObjectName("WaveformCard")
         self.setFixedWidth(240)
         self.setMinimumHeight(220)
+        
+
         
         # Premium styling
         self.setStyleSheet("""
@@ -190,24 +203,68 @@ class WaveformCard(QFrame):
         self.preview = WaveformPreview(data, start_idx, end_idx, self)
         layout.addWidget(self.preview, stretch=1)
         
-        # PF label below the graph
-        if self.calculated_pf is not None:
-            self.lbl_pf = QLabel(f"Calculated PF: {self.calculated_pf:.2f}")
+        # PF & Measured Current label below the graph
+        if self.calculated_pf is not None or self.measured_current is not None:
+            text_parts = []
+            if self.calculated_pf is not None:
+                text_parts.append(f"PF: {self.calculated_pf:.2f}")
+            if self.measured_current is not None:
+                text_parts.append(f"Curr: {self.measured_current:.1f}A")
+            
+            self.lbl_pf = QLabel(" | ".join(text_parts))
             self.lbl_pf.setStyleSheet("font-weight: bold; color: #10B981; font-size: 11px;")
             self.lbl_pf.setAlignment(Qt.AlignCenter)
             layout.addWidget(self.lbl_pf)
 
+        # Add Redo Button on top right
+        from PySide6.QtWidgets import QPushButton
+        self.btn_redo = QPushButton("Redo", self)
+        self.btn_redo.setFixedSize(60, 24)
+        self.btn_redo.setStyleSheet("""
+            QPushButton {
+                background-color: #EF4444;
+                color: white;
+                font-weight: bold;
+                border-radius: 4px;
+                font-size: 11px;
+            }
+            QPushButton:hover {
+                background-color: #DC2626;
+            }
+        """)
+        self.btn_redo.move(170, 8) 
+        self.btn_redo.hide()
+        self.btn_redo.clicked.connect(lambda: self.redo_requested.emit(self.name))
+        self.in_review_mode = False
+
+    def set_review_mode(self, enabled):
+        self.in_review_mode = enabled
+        if enabled:
+            self.btn_redo.show()
+        else:
+            self.btn_redo.hide()
+
     def mousePressEvent(self, event):
-        """Launches the detailed interactive expanded view dialog."""
-        self.open_analysis_dialog()
+        """Launches the detailed interactive expanded view dialog on left click."""
+        if event.button() == Qt.LeftButton:
+            self.open_analysis_dialog()
+
+
 
     def open_analysis_dialog(self):
         """Builds and shows the expanded analysis modal."""
-        dialog = QDialog(self)
+        if WaveformCard._active_dialog is not None and WaveformCard._active_dialog.isVisible():
+            WaveformCard._active_dialog.raise_()
+            WaveformCard._active_dialog.activateWindow()
+            return
+            
+        dialog = QDialog(self.window(), Qt.Window | Qt.WindowMaximizeButtonHint | Qt.WindowCloseButtonHint)
+        dialog.setWindowModality(Qt.ApplicationModal)
         dialog.setWindowTitle(f"Waveform Analysis - {self.name}")
         dialog.setMinimumSize(950, 650)
-        dialog.resize(1000, 700)
         dialog.setStyleSheet("background-color: #F8FAFC;")
+        WaveformCard._active_dialog = dialog
+
         
         main_layout = QVBoxLayout(dialog)
         main_layout.setContentsMargins(15, 15, 15, 15)
@@ -216,8 +273,13 @@ class WaveformCard(QFrame):
         # Interactive Graph widget
         graph = WaveformGraph(dialog)
         graph.setData(self.data, None, self.timebase, self.range_val, test_id=self.test_id)
-        # Enable Auto-zoom by default for transient capture views
-        graph.setAutoZoomEnabled(True)
+        
+        # Inject the overrides/initial calculations into the graph so its floating badge renders correctly
+        graph.calculated_pf = self.calculated_pf
+        graph.measured_current = self.measured_current
+        graph.pulse_duration = self.pulse_duration
+        
+        # Auto-zoom and state restoration will happen after toolbar buttons are created
         main_layout.addWidget(graph, stretch=1)
         
         # Toolbar layout
@@ -251,6 +313,32 @@ class WaveformCard(QFrame):
         btn_autozoom.toggled.connect(graph.setAutoZoomEnabled)
         tb_layout.addWidget(btn_autozoom)
         
+        # Restore saved state if it exists, otherwise initialize defaults
+        if hasattr(self, 'saved_graph_state'):
+            s = self.saved_graph_state
+            graph.cursor1_t = s['c1_t']
+            graph.cursor2_t = s['c2_t']
+            graph.cursor_y1_val = s['y1_v']
+            graph.cursor_y2_val = s['y2_v']
+            graph.view_start_time_ms = s['v_s']
+            graph.view_end_time_ms = s['v_e']
+            graph.view_min_volt = s['v_min_v']
+            graph.view_max_volt = s['v_max_v']
+            graph.view_min_curr = s['v_min_c']
+            graph.view_max_curr = s['v_max_c']
+            graph.meas_box_pos = s['meas_pos']
+            
+            btn_autozoom.blockSignals(True)
+            btn_autozoom.setChecked(s['auto_zoom'])
+            graph.auto_zoom_enabled = s['auto_zoom']
+            btn_autozoom.blockSignals(False)
+            
+            graph._auto_position_cursors = False
+            graph.clamp_view()
+        else:
+            btn_autozoom.setChecked(True)
+            graph.setAutoZoomEnabled(True)
+        
         btn_reset = QPushButton("RESET ZOOM", toolbar)
         btn_reset.setMinimumHeight(32)
         btn_reset.setStyleSheet("""
@@ -281,6 +369,74 @@ class WaveformCard(QFrame):
             lbl_pf_val.setStyleSheet("font-size: 14px; font-weight: bold; color: #10B981; padding-right: 15px;")
             tb_layout.addWidget(lbl_pf_val)
             
+            lbl_curr_val = QLabel(f"Measured Current: {self.measured_current:.1f} A", toolbar)
+            lbl_curr_val.setStyleSheet("font-size: 14px; font-weight: bold; color: #F59E0B; padding-right: 15px;")
+            tb_layout.addWidget(lbl_curr_val)
+            
+            # Dynamic update on cursor move
+            def update_live_labels():
+                live_pf = graph.get_override_pf()
+                live_curr = graph.get_override_current()
+                live_dur = graph.get_override_duration()
+                lbl_pf_val.setText(f"Calculated PF: {live_pf:.3f} ({live_dur:.2f} ms)")
+                lbl_curr_val.setText(f"Measured Current: {live_curr:.1f} A")
+                # Also update the floating badge in the graph
+                graph.calculated_pf = live_pf
+                graph.measured_current = live_curr
+                graph.pulse_duration = live_dur
+                
+            graph.cursors_moved.connect(update_live_labels)
+
+        btn_save = QPushButton("SAVE OVERRIDE", toolbar)
+        btn_save.setMinimumHeight(32)
+        btn_save.setStyleSheet("""
+            QPushButton {
+                background-color: #F59E0B;
+                color: white;
+                font-weight: bold;
+                border: none;
+                border-radius: 4px;
+                padding-left: 16px;
+                padding-right: 16px;
+            }
+            QPushButton:hover {
+                background-color: #D97706;
+            }
+        """)
+        
+        def save_override():
+            pf = graph.get_override_pf()
+            curr = graph.get_override_current()
+            
+            # Update local UI
+            self.calculated_pf = pf
+            self.measured_current = curr
+            
+            if hasattr(self, 'lbl_pf'):
+                self.lbl_pf.setText(f"PF: {pf:.2f} | Curr: {curr:.1f}A")
+            
+            # Update preview zoom
+            if graph.view_end_time_ms > 0:
+                s_idx = max(0, int(graph.view_start_time_ms / graph.interval_ms))
+                e_idx = min(len(self.data[0]) if isinstance(self.data, list) and len(self.data) > 0 else 0, int(graph.view_end_time_ms / graph.interval_ms))
+                self.preview.start_idx = s_idx
+                self.preview.end_idx = e_idx
+                self.preview.update()
+                
+            # Grab graph pixmap
+            pixmap = graph.grab()
+            
+            self.override_requested.emit({
+                'test_id': self.test_id,
+                'pf': pf,
+                'current': curr,
+                'pixmap': pixmap
+            })
+            dialog.accept()
+            
+        btn_save.clicked.connect(save_override)
+        tb_layout.addWidget(btn_save)
+            
         btn_close = QPushButton("CLOSE", toolbar)
         btn_close.setMinimumHeight(32)
         btn_close.setStyleSheet("""
@@ -302,5 +458,26 @@ class WaveformCard(QFrame):
         
         main_layout.addWidget(toolbar)
         
+        # Cleanup when closed
+        def cleanup():
+            self.saved_graph_state = {
+                'c1_t': graph.cursor1_t,
+                'c2_t': graph.cursor2_t,
+                'y1_v': graph.cursor_y1_val,
+                'y2_v': graph.cursor_y2_val,
+                'v_s': graph.view_start_time_ms,
+                'v_e': graph.view_end_time_ms,
+                'v_min_v': graph.view_min_volt,
+                'v_max_v': graph.view_max_volt,
+                'v_min_c': graph.view_min_curr,
+                'v_max_c': graph.view_max_curr,
+                'auto_zoom': btn_autozoom.isChecked(),
+                'meas_pos': graph.meas_box_pos
+            }
+            if WaveformCard._active_dialog == dialog:
+                WaveformCard._active_dialog = None
+        dialog.finished.connect(cleanup)
+        
         # Display the dialog
+        dialog.setWindowState(Qt.WindowMaximized)
         dialog.exec()

@@ -159,7 +159,7 @@ class HardwareService(QObject):
                 if isinstance(data, list) and len(data) == 2 and isinstance(data[0], list):
                     if test_id != "g5":
                         try:
-                            from core.waveform_analyzer import calculate_pulse_duration, calculate_pf_from_duration
+                            from core.waveform_analyzer import calculate_pulse_duration, calculate_pf_from_duration, calculate_peak_voltage, calculate_measured_current
                             duration_ms = calculate_pulse_duration(data[1], timebase)
                             if duration_ms > 0.0:
                                 pf = calculate_pf_from_duration(duration_ms)
@@ -171,8 +171,21 @@ class HardwareService(QObject):
                                     self.context.test_results["calculated_pf"] = pf
                             else:
                                 self.logger.info("Hardware Service: No current pulse detected, defaulting PF calculation to UPF.")
+                            
+                            # Calculate peak voltage and measured current
+                            peak_v = calculate_peak_voltage(data[1])
+                            meas_i = calculate_measured_current(peak_v)
+                            self.logger.info(f"Hardware Service: Measured Peak Current from waveform: {meas_i:.1f} A (Peak V: {peak_v:.3f} V)")
+                            if hasattr(self, 'context') and self.context:
+                                self.context.update_runtime_value("measured_current", meas_i)
+                                self.context.update_runtime_value("peak_voltage", peak_v)
+                                if not isinstance(self.context.test_results, dict):
+                                    self.context.test_results = {}
+                                self.context.test_results["measured_current"] = meas_i
+                                self.context.test_results["peak_voltage"] = peak_v
                         except Exception as e:
-                            self.logger.error(f"Hardware Service: Error calculating Power Factor from waveform: {e}")
+                            self.logger.error(f"Hardware Service: Error calculating parameters from waveform: {e}")
+
                             
                 self.waveform_captured.emit(name, data, timebase, voltage_range)
             else:

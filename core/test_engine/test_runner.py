@@ -307,17 +307,32 @@ class TestRunner(QThread):
                 if self.failure_reason:
                     self.context.database_service.update_test_result(self.context.db_row_id, "failure_reason", self.failure_reason)
                 
+                # Append measurements to reason so it reflects on the final PDF report
+                pf = self.context.test_results.get('calculated_pf')
+                curr = self.context.test_results.get('measured_current')
+                details_text = []
+                if pf is not None: details_text.append(f"PF: {pf:.3f}")
+                if curr is not None: details_text.append(f"Current: {curr:.1f} A")
+                
+                final_reason = self.failure_reason or ""
+                if details_text:
+                    if final_reason: final_reason += " | "
+                    final_reason += "Measurements: " + ", ".join(details_text)
+                
+                if not final_reason:
+                    final_reason = None
+                    
                 # Check if a sub-test was active and failed
                 active_sub = self.context.get_runtime_value("active_sub_test")
                 if active_sub and outcome == "FAIL":
                     self.context.database_service.save_test_run_detail(
-                        self.context.db_row_id, active_sub, "FAIL", self.failure_reason, is_sub_test=True
+                        self.context.db_row_id, active_sub, "FAIL", final_reason, is_sub_test=True
                     )
                     self.context.update_runtime_value("active_sub_test", None)
 
                 # Log this test run execution detail
                 self.context.database_service.save_test_run_detail(
-                    self.context.db_row_id, test_type, outcome, self.failure_reason, is_sub_test=False
+                    self.context.db_row_id, test_type, outcome, final_reason, is_sub_test=False
                 )
                 
                 self.logger.info(f"Database record updated with final outcome: {outcome}")

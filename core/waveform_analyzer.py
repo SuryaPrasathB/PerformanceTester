@@ -73,3 +73,19 @@ def calculate_pf_from_duration(duration_ms: float) -> float:
     pf_clamped = max(0.0, min(1.0, pf))
     logger.debug(f"Duration: {duration_ms:.2f} ms -> Extra: {extra_ms:.2f} ms -> Angle: {angle_deg:.1f}° -> PF: {pf_clamped:.3f}")
     return pf_clamped
+
+def calculate_peak_voltage(waveform_data: list) -> float:
+    """
+    Calculates the peak absolute voltage from the waveform data.
+    """
+    if not waveform_data:
+        return 0.0
+    return max(abs(x) for x in waveform_data)
+
+def calculate_measured_current(peak_voltage: float) -> float:
+    """
+    Calculates current from the waveform peak voltage.
+    Formula: (peak_voltage / 2) * 1200
+    """
+    return (peak_voltage / 2.0) * 1200.0
+

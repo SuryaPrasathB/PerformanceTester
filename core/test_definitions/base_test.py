@@ -15,16 +15,25 @@ class BaseTest(ABC):
         class_name = self.__class__.__name__.lower()
         if "g2" in class_name:
             self.test_identifier = "g2"
+            self.requires_picoscope = False
         elif "g3" in class_name:
             self.test_identifier = "g3"
+            self.requires_picoscope = False
         elif "g5" in class_name:
             self.test_identifier = "g5"
+            self.requires_picoscope = True
         elif "g6" in class_name:
             self.test_identifier = "g6"
+            self.requires_picoscope = True
         elif "g7" in class_name:
             self.test_identifier = "g7"
+            self.requires_picoscope = False
+        elif "prospective" in class_name:
+            self.test_identifier = "prospective"
+            self.requires_picoscope = True
         else:
             self.test_identifier = "unknown"
+            self.requires_picoscope = False
             
         # Allows tests to define their sequence on initialization
         self.build(self._builder)

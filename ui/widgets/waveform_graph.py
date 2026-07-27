@@ -1,7 +1,7 @@
 import math
 import random
-from PySide6.QtWidgets import QWidget
-from PySide6.QtCore import Qt, QPoint, QRect, Signal
+from PySide6.QtWidgets import QWidget, QPinchGesture
+from PySide6.QtCore import Qt, QPoint, QRect, Signal, QEvent
 from PySide6.QtGui import QPainter, QColor, QPen, QFont, QBrush, QMouseEvent, QCursor
 
 class ToolMode:
@@ -15,6 +15,7 @@ class WaveformGraph(QWidget):
     Features drag-and-drop cursors, pan/zoom, autozoom detection, and an 
     in-plot floating zoom toolbox with minimap.
     """
+    cursors_moved = Signal()
     
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -36,13 +37,17 @@ class WaveformGraph(QWidget):
         self.cursor_1x = -1
         self.cursor_2x = -1
         self.cursor_y1 = -1
-        self.dragging_cursor = 0  # 0=none, 1=C1, 2=C2, 3=Y1, 10=zoom_rect, 11=pan, 12=v_slider, 13=h_slider, 14=minimap_pan
+        self.cursor_y2 = -1
+        self.meas_box_pos = None  # QPoint(x, y) for movable measurements table overlay
+        self.drag_meas_offset = QPoint(0, 0)
+        self.dragging_cursor = 0  # 0=none, 1=C1, 2=C2, 3=Y1, 4=Y2, 15=meas_table, 10=zoom_rect, 11=pan, 12=v_slider, 13=h_slider, 14=minimap_pan
         
         # Default paddings
         self.pad_left = 65
         self.pad_top = 25
         self.pad_right = 65
         self.pad_bottom = 45
+
         
         # View limits
         self.view_start_time_ms = 0.0
@@ -52,6 +57,11 @@ class WaveformGraph(QWidget):
         self.view_min_curr = -15.0
         self.view_max_curr = 15.0
         self.auto_zoom_enabled = False
+        self._auto_position_cursors = False
+        self.cursor1_t = 0.0
+        self.cursor2_t = 0.0
+        self.cursor_y1_val = 0.0
+        self.cursor_y2_val = 0.0
         
         # Zoom selection rect coords
         self.select_x1 = -1
@@ -67,6 +77,7 @@ class WaveformGraph(QWidget):
         self.pan_start_v2 = 15.0
         
         self.setMouseTracking(True)
+        self.grabGesture(Qt.PinchGesture)
 
     def setData(self, data_a, data_b=None, timebase=15, range_val=10, test_id="unknown"):
         """Updates the graph dataset and resets the viewport."""
@@ -80,19 +91,8 @@ class WaveformGraph(QWidget):
         self.timebase = timebase
         self.range = range_val
         self.test_id = test_id.lower() if test_id else "unknown"
-        self.calculated_pf = None
-        self.pulse_duration = None
-        
-        # Calculate PF if we have Channel B (current) and it's not G5 test
-        if self.data_b and self.test_id != "g5":
-            try:
-                from core.waveform_analyzer import calculate_pulse_duration, calculate_pf_from_duration
-                duration_ms = calculate_pulse_duration(self.data_b, timebase)
-                if duration_ms > 0.0:
-                    self.pulse_duration = duration_ms
-                    self.calculated_pf = calculate_pf_from_duration(duration_ms)
-            except Exception:
-                pass
+        # PF and measured current will be explicitly set by the parent (WaveformCard)
+        # to respect user overrides.
         
         # Map PicoScope Range constants to actual Volt ranges
         # Mappings: 0->10mV, 1->20mV, 2->50mV, 3->100mV, 4->200mV, 5->500mV, 6->1V, 7->2V, 8->5V, 9->10V, 10->20V
@@ -120,9 +120,28 @@ class WaveformGraph(QWidget):
 
     def reset_cursors(self):
         """Restores measurement cursors to their default locations."""
-        self.cursor_1x = self.pad_left + 40
-        self.cursor_2x = self.pad_left + 120
-        self.cursor_y1 = self.pad_top + 60
+        total_time = (len(self.data_a) * self.interval_ms) if self.data_a else 100.0
+        self.cursor1_t = 0.1 * total_time
+        self.cursor2_t = 0.9 * total_time
+        self.cursor_y1_val = 0.0
+        self.cursor_y2_val = 0.0
+
+    def get_override_duration(self) -> float:
+        """Calculates duration (dt) from vertical cursors."""
+        return abs(self.cursor2_t - self.cursor1_t)
+
+    def get_override_pf(self) -> float:
+        """Calculates PF from vertical cursors."""
+        dt = self.get_override_duration()
+        if dt <= 0.0: return 1.0
+        extra_ms = dt - 10.0
+        angle_deg = extra_ms * 18.0
+        pf = math.cos(math.radians(angle_deg))
+        return max(0.0, min(1.0, pf))
+        
+    def get_override_current(self) -> float:
+        """Calculates current from horizontal cursor using only C2 on the right axis."""
+        return abs(self.cursor_y2_val * 600.0)
 
     def setAutoZoomEnabled(self, enabled):
         """Enables or disables autozooming of transient events."""
@@ -161,6 +180,26 @@ class WaveformGraph(QWidget):
             # Automatically set cursors to the measurement duration
             self.cursor1_t = t_start
             self.cursor2_t = t_end
+            
+            # Also calculate y-values for the cursors
+            start_idx = max(0, int(t_start / self.interval_ms))
+            end_idx = min(len(self.data_a) - 1 if self.data_a else 0, int(t_end / self.interval_ms))
+            
+            # Using data_b for current or data_a for voltage
+            dataset = self.data_b if self.data_b else self.data_a
+            if dataset and start_idx <= end_idx:
+                subset = dataset[start_idx:end_idx+1]
+                if subset:
+                    self.cursor_y1_val = min(subset)
+                    self.cursor_y2_val = max(subset)
+                else:
+                    self.cursor_y1_val = 0.0
+                    self.cursor_y2_val = 0.0
+            else:
+                self.cursor_y1_val = 0.0
+                self.cursor_y2_val = 0.0
+                
+            self._auto_position_cursors = True
             
             # Open measurement tool automatically
             self.show_zoom_toolbox = True
@@ -323,6 +362,22 @@ class WaveformGraph(QWidget):
         if w <= 0 or h <= 0 or graph_w <= 0 or graph_h <= 0:
             return
             
+        # Always map physical values to pixels
+        view_dur = self.view_end_time_ms - self.view_start_time_ms
+        if view_dur > 0:
+            self.cursor_1x = self.pad_left + ((self.cursor1_t - self.view_start_time_ms) / view_dur) * graph_w
+            self.cursor_2x = self.pad_left + ((self.cursor2_t - self.view_start_time_ms) / view_dur) * graph_w
+            
+        c_span = self.view_max_curr - self.view_min_curr
+        if c_span > 0:
+            y2_pct = (self.cursor_y2_val - self.view_min_curr) / c_span
+            self.cursor_y2 = self.pad_top + graph_h - (y2_pct * graph_h)
+
+        # Clamp cursors for drawing so they don't spill out of graph area
+        self.cursor_1x = max(self.pad_left, min(self.pad_left + graph_w, self.cursor_1x))
+        self.cursor_2x = max(self.pad_left, min(self.pad_left + graph_w, self.cursor_2x))
+        self.cursor_y2 = max(self.pad_top, min(self.pad_top + graph_h, self.cursor_y2))
+            
         # Clip painting to graph active area
         painter.save()
         painter.setClipRect(self.pad_left, self.pad_top, graph_w, graph_h)
@@ -376,15 +431,18 @@ class WaveformGraph(QWidget):
         painter.setBrush(QBrush(QColor("#2563EB")))
         painter.drawPolygon([QPoint(self.cursor_2x - 6, self.pad_top + graph_h), QPoint(self.cursor_2x + 6, self.pad_top + graph_h), QPoint(self.cursor_2x, self.pad_top + graph_h - 10)])
         
-        # Cursor horizontal Y1 (Red)
+        # Cursor horizontal Y1 (Removed for simpler UI)
+        
+        # Cursor horizontal Y2 (Red)
         pen_y1 = QPen(QColor("#DC2626"), 1.5, Qt.DashLine)
         painter.setPen(pen_y1)
-        painter.drawLine(self.pad_left, self.cursor_y1, self.pad_left + graph_w, self.cursor_y1)
+        painter.drawLine(self.pad_left, self.cursor_y2, self.pad_left + graph_w, self.cursor_y2)
         painter.setPen(QPen(QColor("#DC2626"), 1))
         painter.setBrush(QBrush(QColor("#DC2626")))
-        painter.drawPolygon([QPoint(self.pad_left, self.cursor_y1 - 6), QPoint(self.pad_left, self.cursor_y1 + 6), QPoint(self.pad_left + 10, self.cursor_y1)])
+        painter.drawPolygon([QPoint(self.pad_left + graph_w, self.cursor_y2 - 6), QPoint(self.pad_left + graph_w, self.cursor_y2 + 6), QPoint(self.pad_left + graph_w - 10, self.cursor_y2)])
         
         painter.restore()
+
         
         # 7. Draw Axis scale labels (ticks)
         painter.setPen(QPen(QColor("#0F172A")))
@@ -432,11 +490,12 @@ class WaveformGraph(QWidget):
         if self.show_zoom_toolbox:
             self.draw_zoom_toolbox(painter, w, h)
             
-        # 11. Draw floating Power Factor Badge
-        if self.calculated_pf is not None:
+        # 11. Draw floating Power Factor & Current Badge
+        if self.calculated_pf is not None or self.measured_current is not None:
             self.draw_pf_badge(painter)
 
     def draw_waveform_path(self, painter, dataset, color, graph_w, graph_h, is_current=False):
+
         """Paints a waveform series on the screen canvas."""
         pen = QPen(color, 1.8, Qt.SolidLine)
         painter.setPen(pen)
@@ -492,11 +551,11 @@ class WaveformGraph(QWidget):
         painter.drawLine(x + 9, y + 7, x + 9, y + 11)
 
     def draw_pf_badge(self, painter):
-        """Draws a premium styled floating badge/overlay displaying the calculated Power Factor."""
+        """Draws a premium styled floating badge/overlay displaying the calculated Power Factor & Measured Current."""
         badge_x = self.pad_left + 15
         badge_y = self.pad_top + 15
-        badge_w = 175
-        badge_h = 52
+        badge_w = 210
+        badge_h = 68 if self.measured_current is not None else 52
         
         painter.save()
         # Draw translucent dark background card with subtle blue border
@@ -504,45 +563,61 @@ class WaveformGraph(QWidget):
         painter.setBrush(QBrush(QColor(15, 23, 42, 220))) # 85% opacity Slate 900
         painter.drawRoundedRect(badge_x, badge_y, badge_w, badge_h, 6, 6)
         
-        # Draw label
-        painter.setFont(QFont("Segoe UI", 8, QFont.Bold))
-        painter.setPen(QPen(QColor("#94A3B8")))
-        painter.drawText(QRect(badge_x + 10, badge_y + 6, badge_w - 20, 16), Qt.AlignLeft | Qt.AlignVCenter, "CALCULATED PF")
-        
-        # Draw PF value
-        painter.setFont(QFont("Segoe UI", 15, QFont.Bold))
-        painter.setPen(QPen(QColor("#38BDF8")))
-        pf_text = f"{self.calculated_pf:.3f}"
-        painter.drawText(QRect(badge_x + 10, badge_y + 22, badge_w - 20, 24), Qt.AlignLeft | Qt.AlignVCenter, pf_text)
-        
-        # Draw Pulse Duration text
-        painter.setFont(QFont("Segoe UI", 8, QFont.Bold))
-        painter.setPen(QPen(QColor("#10B981"))) # Emerald Green
-        dur_text = f"({self.pulse_duration:.2f} ms)"
-        painter.drawText(QRect(badge_x + 80, badge_y + 26, badge_w - 90, 20), Qt.AlignRight | Qt.AlignVCenter, dur_text)
+        if self.calculated_pf is not None:
+            # Draw PF label
+            painter.setFont(QFont("Segoe UI", 8, QFont.Bold))
+            painter.setPen(QPen(QColor("#94A3B8")))
+            painter.drawText(QRect(badge_x + 10, badge_y + 4, 100, 16), Qt.AlignLeft | Qt.AlignVCenter, "CALCULATED PF")
+            
+            # Draw PF value
+            painter.setFont(QFont("Segoe UI", 13, QFont.Bold))
+            painter.setPen(QPen(QColor("#38BDF8")))
+            pf_text = f"{self.calculated_pf:.3f}"
+            painter.drawText(QRect(badge_x + 10, badge_y + 20, 80, 20), Qt.AlignLeft | Qt.AlignVCenter, pf_text)
+            
+            # Draw Pulse Duration text
+            painter.setFont(QFont("Segoe UI", 8, QFont.Bold))
+            painter.setPen(QPen(QColor("#10B981"))) # Emerald Green
+            dur_text = f"({self.pulse_duration:.2f} ms)" if self.pulse_duration else ""
+            painter.drawText(QRect(badge_x + 95, badge_y + 20, 105, 20), Qt.AlignRight | Qt.AlignVCenter, dur_text)
+
+        if self.measured_current is not None:
+            curr_y = badge_y + 42 if self.calculated_pf is not None else badge_y + 6
+            painter.setFont(QFont("Segoe UI", 8, QFont.Bold))
+            painter.setPen(QPen(QColor("#94A3B8")))
+            painter.drawText(QRect(badge_x + 10, curr_y, 110, 16), Qt.AlignLeft | Qt.AlignVCenter, "MEASURED CURRENT")
+            
+            painter.setFont(QFont("Segoe UI", 11, QFont.Bold))
+            painter.setPen(QPen(QColor("#F59E0B"))) # Amber
+            curr_text = f"{self.measured_current:.1f} A"
+            painter.drawText(QRect(badge_x + 120, curr_y, 80, 16), Qt.AlignRight | Qt.AlignVCenter, curr_text)
         
         painter.restore()
+
 
     def draw_rulers_overlay(self, painter, graph_w, graph_h, w):
         """Renders the numerical measurements table based on cursors."""
         view_dur = self.view_end_time_ms - self.view_start_time_ms
         
         # Horizontal values mapping
-        t1 = self.view_start_time_ms + ((self.cursor_1x - self.pad_left) / graph_w) * view_dur
-        t2 = self.view_start_time_ms + ((self.cursor_2x - self.pad_left) / graph_w) * view_dur
+        t1 = self.cursor1_t
+        t2 = self.cursor2_t
         dt = abs(t2 - t1)
         freq = (1000.0 / dt) if dt > 0.0 else 0.0
         rpm = freq * 60.0
         
-        # Vertical value mapping
-        v_range = self.view_max_volt - self.view_min_volt
-        vy1 = self.view_max_volt - ((self.cursor_y1 - self.pad_top) / graph_h) * v_range
+        # Vertical value mapping (using Channel B scale, displayed as Volts)
+        v_y2 = self.cursor_y2_val
         
-        # Overlay box properties
+        # Overlay box properties (support custom position via dragging)
         box_w = 260
         box_h = 135
-        box_x = w - box_w - 15
-        box_y = 15 if not self.show_zoom_toolbox else 255
+        if self.meas_box_pos is not None:
+            box_x = self.meas_box_pos.x()
+            box_y = self.meas_box_pos.y()
+        else:
+            box_x = w - box_w - 15
+            box_y = 15 if not self.show_zoom_toolbox else 255
         
         painter.save()
         
@@ -598,13 +673,13 @@ class WaveformGraph(QWidget):
         painter.drawText(QRect(c_x2, r_y + row_h, 65, row_h), Qt.AlignCenter, f"{t2:.1f}ms")
         painter.drawText(QRect(c_x3, r_y + row_h, 65, row_h), Qt.AlignCenter, f"{dt:.1f}ms")
         
-        # Voltage row (Y indicators)
+        # Current row (Y indicator)
         painter.fillRect(box_x + 5, r_y + 2 * row_h + 5, 12, 12, QColor("#DC2626"))
         
-        units = "V"
-        painter.drawText(QRect(c_x1, r_y + 2 * row_h, 65, row_h), Qt.AlignCenter, f"{vy1:.2f}{units}")
-        painter.drawText(QRect(c_x2, r_y + 2 * row_h, 65, row_h), Qt.AlignCenter, "--")
-        painter.drawText(QRect(c_x3, r_y + 2 * row_h, 65, row_h), Qt.AlignCenter, "--")
+        painter.drawText(QRect(c_x1, r_y + 2 * row_h, 65, row_h), Qt.AlignCenter, "-")
+        painter.drawText(QRect(c_x2, r_y + 2 * row_h, 65, row_h), Qt.AlignCenter, f"{v_y2:.2f}V")
+        painter.drawText(QRect(c_x3, r_y + 2 * row_h, 65, row_h), Qt.AlignCenter, "-")
+
         
         # Frequency and RPM summary row
         painter.drawText(QRect(box_x + 8, r_y + 3 * row_h, box_w - 16, row_h), Qt.AlignLeft | Qt.AlignVCenter, f"Freq: {freq:.1f} Hz")
@@ -812,18 +887,27 @@ class WaveformGraph(QWidget):
                     return
                 return
                 
-        # 3. Measurement Rulers table reset check
-        if self.is_cursors_moved():
-            box_w = 260
-            box_h = 135
-            box_x = w - box_w - 15
-            box_y = 15 if not self.show_zoom_toolbox else 255
+        # 3. Measurement Rulers table drag and reset checks
+        box_w = 260
+        box_h = 135
+        if self.meas_box_pos is not None:
+            mb_x = self.meas_box_pos.x()
+            mb_y = self.meas_box_pos.y()
+        else:
+            mb_x = w - box_w - 15
+            mb_y = 15 if not self.show_zoom_toolbox else 255
             
-            # Detect click on reset button (top right cross in overlay box)
-            if box_x + box_w - 20 <= x <= box_x + box_w - 5 and box_y + 5 <= y <= box_y + 20:
-                self.reset_cursors()
-                self.update()
-                return
+        # Detect click on reset button (top right cross in overlay box)
+        if mb_x + box_w - 20 <= x <= mb_x + box_w - 5 and mb_y + 5 <= y <= mb_y + 20:
+            self.reset_cursors()
+            self.update()
+            return
+            
+        # Detect click on measurements table header/body for dragging
+        if mb_x <= x <= mb_x + box_w and mb_y <= y <= mb_y + box_h:
+            self.dragging_cursor = 15
+            self.drag_meas_offset = QPoint(int(x - mb_x), int(y - mb_y))
+            return
 
         # 4. Canvas plotting region click checks (Tool based)
         graph_w = w - self.pad_left - self.pad_right
@@ -857,6 +941,8 @@ class WaveformGraph(QWidget):
             self.dragging_cursor = 2
         elif abs(y - self.cursor_y1) < 12:
             self.dragging_cursor = 3
+        elif abs(y - self.cursor_y2) < 12:
+            self.dragging_cursor = 4
         else:
             self.dragging_cursor = 0
 
@@ -879,21 +965,36 @@ class WaveformGraph(QWidget):
             # Hover cursor pointers for draggable areas
             if abs(x - self.cursor_1x) < 10 or abs(x - self.cursor_2x) < 10:
                 self.setCursor(QCursor(Qt.SizeHorCursor))
-            elif abs(y - self.cursor_y1) < 10:
+            elif abs(y - self.cursor_y1) < 10 or abs(y - self.cursor_y2) < 10:
                 self.setCursor(QCursor(Qt.SizeVerCursor))
             else:
                 self.setCursor(QCursor(Qt.ArrowCursor))
             return
 
         if self.dragging_cursor == 1:
-            self.cursor_1x = cx
+            view_dur = self.view_end_time_ms - self.view_start_time_ms
+            self.cursor1_t = self.view_start_time_ms + ((cx - self.pad_left) / graph_w) * view_dur
+            self.cursors_moved.emit()
             self.update()
         elif self.dragging_cursor == 2:
-            self.cursor_2x = cx
+            view_dur = self.view_end_time_ms - self.view_start_time_ms
+            self.cursor2_t = self.view_start_time_ms + ((cx - self.pad_left) / graph_w) * view_dur
+            self.cursors_moved.emit()
             self.update()
         elif self.dragging_cursor == 3:
-            self.cursor_y1 = cy
+            pass
+        elif self.dragging_cursor == 4:
+            c_span = self.view_max_curr - self.view_min_curr
+            self.cursor_y2_val = self.view_max_curr - ((cy - self.pad_top) / graph_h) * c_span
+            self.cursors_moved.emit()
             self.update()
+        elif self.dragging_cursor == 15:
+            # Dragging measurement overlay table
+            new_x = max(0, min(w - 260, x - self.drag_meas_offset.x()))
+            new_y = max(0, min(h - 135, y - self.drag_meas_offset.y()))
+            self.meas_box_pos = QPoint(int(new_x), int(new_y))
+            self.update()
+
         elif self.dragging_cursor == 10:
             # Zoom selection rect dragging
             self.select_x2 = x
@@ -1015,3 +1116,70 @@ class WaveformGraph(QWidget):
         self.view_max_volt = new_max_v
         self.clamp_view()
         self.update()
+
+    def wheelEvent(self, event):
+        delta = event.angleDelta().y()
+        if delta == 0:
+            return
+            
+        ratio = 0.8 if delta > 0 else 1.25
+        
+        x = event.position().x()
+        w = self.width()
+        graph_w = w - self.pad_left - self.pad_right
+        
+        x = max(self.pad_left, min(x, self.pad_left + graph_w))
+        
+        duration = self.view_end_time_ms - self.view_start_time_ms
+        time_at_x = self.view_start_time_ms + ((x - self.pad_left) / graph_w) * duration
+        
+        new_duration = duration * ratio
+        
+        total_time = (len(self.data_a) * self.interval_ms) if self.data_a else 100.0
+        if new_duration > total_time:
+            new_duration = total_time
+            
+        pct_x = (x - self.pad_left) / graph_w
+        self.view_start_time_ms = time_at_x - new_duration * pct_x
+        self.view_end_time_ms = self.view_start_time_ms + new_duration
+        self.clamp_view()
+        self.update()
+
+    def event(self, event):
+        if event.type() == QEvent.Gesture:
+            pinch = event.gesture(Qt.PinchGesture)
+            if pinch:
+                self.pinchEvent(pinch)
+                return True
+        return super().event(event)
+        
+    def pinchEvent(self, pinch):
+        changeFlags = pinch.changeFlags()
+        if changeFlags & QPinchGesture.ScaleFactorChanged:
+            factor = pinch.scaleFactor()
+            if factor <= 0:
+                return
+            
+            ratio = 1.0 / factor
+            
+            center = pinch.centerPoint()
+            x = center.x()
+            
+            w = self.width()
+            graph_w = w - self.pad_left - self.pad_right
+            
+            x = max(self.pad_left, min(x, self.pad_left + graph_w))
+            duration = self.view_end_time_ms - self.view_start_time_ms
+            time_at_x = self.view_start_time_ms + ((x - self.pad_left) / graph_w) * duration
+            
+            new_duration = duration * ratio
+            
+            total_time = (len(self.data_a) * self.interval_ms) if self.data_a else 100.0
+            if new_duration > total_time:
+                new_duration = total_time
+                
+            pct_x = (x - self.pad_left) / graph_w
+            self.view_start_time_ms = time_at_x - new_duration * pct_x
+            self.view_end_time_ms = self.view_start_time_ms + new_duration
+            self.clamp_view()
+            self.update()

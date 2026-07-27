@@ -405,6 +405,14 @@ class TestBuilder:
             
             execute_single_command(command_key)
             
+            # --- MOCK MODE: Simulate Current Drop ---
+            if command_key == "open_load_switch":
+                if hw.mfm_drv: hw.mfm_drv._mock_load_switch_open = True
+                if hw.mfm2_drv: hw.mfm2_drv._mock_load_switch_open = True
+            elif command_key == "close_load_switch":
+                if hw.mfm_drv: hw.mfm_drv._mock_load_switch_open = False
+                if hw.mfm2_drv: hw.mfm2_drv._mock_load_switch_open = False
+            
             if mode == "serial" and command_key in ["close_load_switch", "open_load_switch"]:
                 # Refresh the ignore window to exactly 5 seconds after the command has successfully been sent
                 ctx.update_runtime_value("ignore_mfm_until", time.time() + 5)
@@ -469,15 +477,38 @@ class TestBuilder:
             loop_id = id(action)
             ctx.push_loop(loop_id, count)
             try:
+                # Normal automated execution
                 for i in range(count):
                     ctx.update_status(f"Loop {i+1}/{count}")
                     ctx.set_loop_iteration(i)
-                    # Create a temporary builder for the loop body
                     sub_builder = TestBuilder()
                     loop_builder_func(sub_builder, i)
-                    # Execute the sub-steps immediately
                     for step in sub_builder._steps:
                         self._execute_step(ctx, step, hw, min_duration)
+                
+                # Review phase
+                while True:
+                    ctx.update_status("Loop Complete. Waiting for Review.")
+                    res = ctx.prompt_user_action("Review cycles. Click 'Continue' to proceed, or click 'Redo' on a graph.", True)
+                    
+                    if not res or res == "Continue" or res.lower() == "yes" or res.lower() == "y":
+                        break
+                    
+                    if isinstance(res, str) and res.startswith("REDO:"):
+                        try:
+                            # 1-indexed from UI
+                            cycle_to_redo = int(res.split(":")[1]) - 1 
+                            if 0 <= cycle_to_redo < count:
+                                ctx.update_status(f"Redoing Loop {cycle_to_redo+1}/{count}")
+                                ctx.set_loop_iteration(cycle_to_redo)
+                                sub_builder = TestBuilder()
+                                loop_builder_func(sub_builder, cycle_to_redo)
+                                for step in sub_builder._steps:
+                                    self._execute_step(ctx, step, hw, min_duration)
+                            else:
+                                ctx.logger.warning(f"Invalid cycle to redo: {cycle_to_redo+1}")
+                        except ValueError:
+                            ctx.logger.warning(f"Failed to parse REDO command: {res}")
             finally:
                 ctx.pop_loop()
         
