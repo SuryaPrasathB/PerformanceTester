@@ -190,8 +190,14 @@ class WaveformGraph(QWidget):
             if dataset and start_idx <= end_idx:
                 subset = dataset[start_idx:end_idx+1]
                 if subset:
-                    self.cursor_y1_val = min(subset)
-                    self.cursor_y2_val = max(subset)
+                    min_v = min(subset)
+                    max_v = max(subset)
+                    if abs(min_v) > abs(max_v):
+                        self.cursor_y2_val = min_v
+                        self.cursor_y1_val = max_v
+                    else:
+                        self.cursor_y2_val = max_v
+                        self.cursor_y1_val = min_v
                 else:
                     self.cursor_y1_val = 0.0
                     self.cursor_y2_val = 0.0

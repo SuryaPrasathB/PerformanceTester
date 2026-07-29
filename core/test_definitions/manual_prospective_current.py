@@ -24,16 +24,33 @@ class ManualProspectiveCurrentTest(BaseTest):
         def configure_picoscope(ctx, hw):
             expected_v = float(ctx.get_runtime_value("expected_peak_voltage", 20.0))
             # Determine range index based on expected voltage
-            if expected_v <= 1.0: range_idx = 6 # 1V
-            elif expected_v <= 2.0: range_idx = 7 # 2V
-            elif expected_v <= 5.0: range_idx = 8 # 5V
-            elif expected_v <= 10.0: range_idx = 9 # 10V
-            else: range_idx = 10 # 20V
+            if expected_v <= 1.0:
+                range_idx = 6 # 1V
+                range_v = 1.0
+            elif expected_v <= 2.0:
+                range_idx = 7 # 2V
+                range_v = 2.0
+            elif expected_v <= 5.0:
+                range_idx = 8 # 5V
+                range_v = 5.0
+            elif expected_v <= 10.0:
+                range_idx = 9 # 10V
+                range_v = 10.0
+            else:
+                range_idx = 10 # 20V
+                range_v = 20.0
             
             pico = hw.picoscope
             if pico:
                 pico.set_channel_ranges(10, range_idx)
-                ctx.logger.info(f"Dynamically set PicoScope Channel B to {range_idx} (+/- {expected_v}V)")
+                pico.trigger_mode = "auto"
+                
+                # Calculate dynamic trigger threshold (35% of expected peak voltage, max 2V)
+                target_trigger_v = min(expected_v * 0.35, 2.0)
+                calc_adc = int((target_trigger_v / range_v) * 32512)
+                pico.trigger_threshold_adc = calc_adc
+                
+                ctx.logger.info(f"Dynamically set PicoScope Channel B to {range_idx} (+/- {range_v}V). Auto trigger ADC set to {calc_adc} (~{target_trigger_v:.2f}V).")
         builder.custom_action("Configure PicoScope Range", configure_picoscope)
 
         # 4. Start capturing PicoScope waveform with optional delay shift
@@ -70,3 +87,6 @@ class ManualProspectiveCurrentTest(BaseTest):
         # Stop Power Sequence (Turn OFF ACB and Contactor)
         builder.set_plc_coil(PLCCoil.CONTACTOR_120A_LOAD_BANK_COIL_ADDR, False)
         builder.set_plc_coil(PLCCoil.ACB_COIL_ADDR, False)
+        
+        # Restore PicoScope trigger mode to manual
+        builder.custom_action("Restore PicoScope Trigger", lambda ctx, hw: setattr(hw.picoscope, 'trigger_mode', 'manual') if hw.picoscope else None)

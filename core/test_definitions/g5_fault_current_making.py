@@ -57,23 +57,55 @@ class G5FaultCurrentMakingTest(BaseTest):
             # 18. If U3, prompt user to set load to Vc, 3 kA, 0.8 PF.
             def prompt_category_load(ctx, hw):
                 cat = str(ctx.get_runtime_value("meter_category", "U2")).strip().upper()
-                if cat == "U3":
-                    ctx.prompt_user_action("Set load to Vc, 3 kA, 0.8 PF", False)
+                if i == 0:
+                    if cat == "U3":
+                        ans = ctx.prompt_user_action("Set load to Vc, 3 kA, 0.8 PF.\nEnter Expected Peak Voltage (e.g. 2 for 1kA, 10 for 6kA):", True)
+                        ctx.update_runtime_value("expected_peak_voltage_g5", ans)
+                    else:
+                        ans = ctx.prompt_user_action("Set load to Vc, 2.5 kA, 0.8 PF.\nEnter Expected Peak Voltage (e.g. 2 for 1kA, 10 for 6kA):", True)
+                        ctx.update_runtime_value("expected_peak_voltage_g5", ans)
                 else:
-                    ctx.prompt_user_action("Set load to Vc, 2.5 kA, 0.8 PF", False)
+                    if cat == "U3":
+                        ctx.prompt_user_action("Set load to Vc, 3 kA, 0.8 PF.", False)
+                    else:
+                        ctx.prompt_user_action("Set load to Vc, 2.5 kA, 0.8 PF.", False)
             b.custom_action(f"Prompt for Load Configuration (Iteration {i+1})", prompt_category_load)
             
             # 23. Auto-configure PicoScope Range based on category
             def configure_picoscope_g5(ctx, hw):
                 cat = str(ctx.get_runtime_value("meter_category", "U2")).strip().upper()
+                expected_v = float(ctx.get_runtime_value("expected_peak_voltage_g5", 20.0))
+                
+                if expected_v <= 1.0:
+                    range_idx = 6 # 1V
+                    range_v = 1.0
+                elif expected_v <= 2.0:
+                    range_idx = 7 # 2V
+                    range_v = 2.0
+                elif expected_v <= 5.0:
+                    range_idx = 8 # 5V
+                    range_v = 5.0
+                elif expected_v <= 10.0:
+                    range_idx = 9 # 10V
+                    range_v = 10.0
+                else:
+                    range_idx = 10 # 20V
+                    range_v = 20.0
+                
                 pico = hw.picoscope
                 if pico:
-                    # For G5: High current loads. Assuming 2.5kA/3kA will peak around 5V.
-                    # 8 = +/- 5V. Adjust if they need more headroom (9 = +/- 10V).
-                    # Since they mentioned 6kA = 10V, 3kA will be ~5V.
-                    range_idx = 8 if cat == "U2" else 9 
                     pico.set_channel_ranges(10, range_idx)
-                    ctx.logger.info(f"Dynamically set PicoScope Channel B to {range_idx} for {cat}")
+                    
+                    # Force hardware edge-trigger mode to ensure we don't miss the 
+                    # waveform due to variable serial comm delays of close_load_switch
+                    pico.trigger_mode = "auto"
+                    
+                    # Calculate dynamic trigger threshold (35% of expected peak voltage, max 2V)
+                    target_trigger_v = min(expected_v * 0.35, 2.0)
+                    calc_adc = int((target_trigger_v / range_v) * 32512)
+                    pico.trigger_threshold_adc = calc_adc
+                    
+                    ctx.logger.info(f"Dynamically set PicoScope Channel B to {range_idx} (+/- {range_v}V) for {cat}. Auto trigger ADC set to {calc_adc} (~{target_trigger_v:.2f}V).")
             b.custom_action("Auto-Configure PicoScope Range", configure_picoscope_g5)
             
             # 19-21. Turn ON SCR and notify PLC that the test is starting (FCMC_TEST_START = 0x00).
@@ -158,6 +190,10 @@ class G5FaultCurrentMakingTest(BaseTest):
         builder.stop_power_sequence(PLCCoil.CONTACTOR_120A_LOAD_BANK_COIL_ADDR)
         
     def _verify_and_store(self, ctx, hw):
+        if hw.picoscope:
+            hw.picoscope.trigger_mode = "manual"
+            ctx.logger.info("Restored PicoScope trigger mode to manual.")
+            
         if not hasattr(ctx, "test_results"):
             ctx.test_results = {}
             
@@ -166,8 +202,20 @@ class G5FaultCurrentMakingTest(BaseTest):
             final = float(ctx.get_runtime_value("energy_final", 0))
             diff = abs(final - initial)
             g7_res = ctx.get_runtime_value("g7_result", "Skipped")
-            ctx.logger.info(f"G5 Test Completed. Energy difference: {diff}. G7 Result: {g7_res}. Coagulated Result: PASS")
-            ctx.test_results["success"] = True
+            
+            ctx.test_results["energy_difference"] = diff
+            ctx.test_results["g7_result"] = g7_res
+            
+            threshold_percent = ctx.config.get("testing", {}).get("energy_diff_threshold_percent", 1.0)
+            threshold_val = initial * (threshold_percent / 100.0)
+            
+            if diff > threshold_val:
+                ctx.logger.error(f"Test Failed: Energy diff {diff:.2f} exceeds {threshold_percent}% threshold.")
+                ctx.test_results["success"] = False
+                ctx.test_results["failure_reason"] = f"Energy diff > {threshold_percent}%"
+            else:
+                ctx.logger.info(f"G5 Test Completed. Energy diff: {diff:.2f}, G7 Result: {g7_res}. Coagulated Result: PASS")
+                ctx.test_results["success"] = True
         except ValueError:
             ctx.logger.error("Test Failed: Invalid energy values entered.")
             ctx.test_results["success"] = False

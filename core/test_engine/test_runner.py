@@ -84,6 +84,7 @@ class TestRunner(QThread):
         try:
             # 1. INIT
             self.set_state(TestState.INIT)
+            self._handle_database_session()
             self.test.setup(self.context)
             
             # 2. RUNNING
@@ -268,6 +269,9 @@ class TestRunner(QThread):
         """Resolves meter serial and database row to append/insert without interrupting prompt."""
         if not self.context.database_service:
             self.logger.warning("Database service not available. Skipping DB session management.")
+            return
+
+        if getattr(self.context, "db_row_id", None) is not None:
             return
 
         serial = str(self.context.meter_serial_number).strip()

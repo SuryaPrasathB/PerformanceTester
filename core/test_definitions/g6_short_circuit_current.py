@@ -43,10 +43,18 @@ class G6ShortCircuitCurrentTest(BaseTest):
         # 17-18. If U2, set load to 4.5 kA. If U3, set load to 6 kA.
         def prompt_load_test_1(ctx, hw, iteration):
             cat = str(ctx.get_runtime_value("meter_category_1", "U2")).strip().upper()
-            if cat == "U3":
-                ctx.prompt_user_action(f"Set load to Vc, 6 kA, 0.8 PF (Iteration {iteration+1})", False)
+            if iteration == 0:
+                if cat == "U3":
+                    ans = ctx.prompt_user_action(f"Set load to Vc, 6 kA, 0.8 PF (Iteration {iteration+1}).\nEnter Expected Peak Voltage (e.g. 2 for 1kA, 10 for 6kA):", True)
+                    ctx.update_runtime_value("expected_peak_voltage_1", ans)
+                else:
+                    ans = ctx.prompt_user_action(f"Set load to Vc, 4.5 kA, 0.8 PF (Iteration {iteration+1}).\nEnter Expected Peak Voltage (e.g. 2 for 1kA, 10 for 6kA):", True)
+                    ctx.update_runtime_value("expected_peak_voltage_1", ans)
             else:
-                ctx.prompt_user_action(f"Set load to Vc, 4.5 kA, 0.8 PF (Iteration {iteration+1})", False)
+                if cat == "U3":
+                    ctx.prompt_user_action(f"Set load to Vc, 6 kA, 0.8 PF (Iteration {iteration+1}).", False)
+                else:
+                    ctx.prompt_user_action(f"Set load to Vc, 4.5 kA, 0.8 PF (Iteration {iteration+1}).", False)
         
         # Repeat 3 times (First SC test)
         def short_circuit_loop_1(b, i):
@@ -59,6 +67,7 @@ class G6ShortCircuitCurrentTest(BaseTest):
             
             # Now set to High Current for the SC test (Keep ACB ON, turn OFF 120A Contactor & SCR)
             b.set_plc_coil(PLCCoil.SCR_COIL_ADDR, False)
+            b.wait(5)
             b.set_plc_coil(PLCCoil.CONTACTOR_120A_LOAD_BANK_COIL_ADDR, False)
             b.custom_action(f"Prompt for Load Configuration (Test 1, Iteration {i+1})", lambda ctx, hw: prompt_load_test_1(ctx, hw, i))
             
@@ -68,13 +77,35 @@ class G6ShortCircuitCurrentTest(BaseTest):
             # Auto-configure PicoScope Range based on category
             def configure_picoscope_g6_1(ctx, hw):
                 cat = str(ctx.get_runtime_value("meter_category_1", "U2")).strip().upper()
+                expected_v = float(ctx.get_runtime_value("expected_peak_voltage_1", 20.0))
+                
+                if expected_v <= 1.0:
+                    range_idx = 6 # 1V
+                    range_v = 1.0
+                elif expected_v <= 2.0:
+                    range_idx = 7 # 2V
+                    range_v = 2.0
+                elif expected_v <= 5.0:
+                    range_idx = 8 # 5V
+                    range_v = 5.0
+                elif expected_v <= 10.0:
+                    range_idx = 9 # 10V
+                    range_v = 10.0
+                else:
+                    range_idx = 10 # 20V
+                    range_v = 20.0
+                
                 pico = hw.picoscope
                 if pico:
-                    # G6 Test 1: 4.5kA (U2) or 6kA (U3). 
-                    # 6kA reaches ~10V, so use Range 10 (+/- 20V) to be completely safe from clipping.
-                    range_idx = 10
                     pico.set_channel_ranges(10, range_idx)
-                    ctx.logger.info(f"Dynamically set PicoScope Channel B to {range_idx} for {cat}")
+                    pico.trigger_mode = "auto"
+                    
+                    # Calculate dynamic trigger threshold (35% of expected peak voltage, max 2V)
+                    target_trigger_v = min(expected_v * 0.35, 2.0)
+                    calc_adc = int((target_trigger_v / range_v) * 32512)
+                    pico.trigger_threshold_adc = calc_adc
+                    
+                    ctx.logger.info(f"Dynamically set PicoScope Channel B to {range_idx} (+/- {range_v}V) for {cat}. Auto trigger ADC set to {calc_adc} (~{target_trigger_v:.2f}V).")
             b.custom_action("Auto-Configure PicoScope Range", configure_picoscope_g6_1)
 
             # Start capturing PicoScope waveform before setting coils
@@ -85,9 +116,12 @@ class G6ShortCircuitCurrentTest(BaseTest):
 
             
             # 23. After 20 ms, stop waveform capture and save the waveform.
-            def wait_and_stop_capture(ctx, hw):
+            def wait_and_stop_capture(ctx, hw, iteration=i):
                 time.sleep(0.02)
-                getattr(hw, "stop_waveform_capture", lambda: ctx.logger.info("Stopped and Saved Waveform Capture"))()
+                if hasattr(hw, "stop_waveform_capture"):
+                    hw.stop_waveform_capture(name=f"Waveform {iteration+1}")
+                else:
+                    ctx.logger.info(f"Stopped and Saved Waveform {iteration+1}")
                 
             b.custom_action("Wait 20ms and Stop Capture", wait_and_stop_capture)
             
@@ -116,10 +150,18 @@ class G6ShortCircuitCurrentTest(BaseTest):
         # 32-33. If U2, set load to 2.5 kA. If U3, set load to 3 kA.
         def prompt_load_test_2(ctx, hw, iteration):
             cat = str(ctx.get_runtime_value("meter_category_2", "U2")).strip().upper()
-            if cat == "U3":
-                ctx.prompt_user_action(f"Set load to Vc, 3 kA, 0.8 PF (Iteration {iteration+1})", False)
+            if iteration == 0:
+                if cat == "U3":
+                    ans = ctx.prompt_user_action(f"Set load to Vc, 3 kA, 0.8 PF (Iteration {iteration+1}).\nEnter Expected Peak Voltage (e.g. 2 for 1kA, 10 for 6kA):", True)
+                    ctx.update_runtime_value("expected_peak_voltage_2", ans)
+                else:
+                    ans = ctx.prompt_user_action(f"Set load to Vc, 2.5 kA, 0.8 PF (Iteration {iteration+1}).\nEnter Expected Peak Voltage (e.g. 2 for 1kA, 10 for 6kA):", True)
+                    ctx.update_runtime_value("expected_peak_voltage_2", ans)
             else:
-                ctx.prompt_user_action(f"Set load to Vc, 2.5 kA, 0.8 PF (Iteration {iteration+1})", False)
+                if cat == "U3":
+                    ctx.prompt_user_action(f"Set load to Vc, 3 kA, 0.8 PF (Iteration {iteration+1}).", False)
+                else:
+                    ctx.prompt_user_action(f"Set load to Vc, 2.5 kA, 0.8 PF (Iteration {iteration+1}).", False)
         
         # Repeat 3 times (Second SC test)
         def short_circuit_loop_2(b, i):
@@ -132,6 +174,7 @@ class G6ShortCircuitCurrentTest(BaseTest):
             
             # Now set to High Current for the SC test (Keep ACB ON, turn OFF 120A Contactor & SCR)
             b.set_plc_coil(PLCCoil.SCR_COIL_ADDR, False)
+            b.wait(5)
             b.set_plc_coil(PLCCoil.CONTACTOR_120A_LOAD_BANK_COIL_ADDR, False)
             b.custom_action(f"Prompt for Load Configuration (Test 2, Iteration {i+1})", lambda ctx, hw: prompt_load_test_2(ctx, hw, i))
             
@@ -141,13 +184,35 @@ class G6ShortCircuitCurrentTest(BaseTest):
             # Auto-configure PicoScope Range based on category
             def configure_picoscope_g6_2(ctx, hw):
                 cat = str(ctx.get_runtime_value("meter_category_2", "U2")).strip().upper()
+                expected_v = float(ctx.get_runtime_value("expected_peak_voltage_2", 20.0))
+                
+                if expected_v <= 1.0:
+                    range_idx = 6 # 1V
+                    range_v = 1.0
+                elif expected_v <= 2.0:
+                    range_idx = 7 # 2V
+                    range_v = 2.0
+                elif expected_v <= 5.0:
+                    range_idx = 8 # 5V
+                    range_v = 5.0
+                elif expected_v <= 10.0:
+                    range_idx = 9 # 10V
+                    range_v = 10.0
+                else:
+                    range_idx = 10 # 20V
+                    range_v = 20.0
+                
                 pico = hw.picoscope
                 if pico:
-                    # G6 Test 2: 2.5kA (U2) or 3kA (U3). 
-                    # 3kA reaches ~5V, so use Range 9 (+/- 10V) or 8 (+/- 5V). 
-                    range_idx = 8 if cat == "U2" else 9
                     pico.set_channel_ranges(10, range_idx)
-                    ctx.logger.info(f"Dynamically set PicoScope Channel B to {range_idx} for {cat}")
+                    pico.trigger_mode = "auto"
+                    
+                    # Calculate dynamic trigger threshold (35% of expected peak voltage, max 2V)
+                    target_trigger_v = min(expected_v * 0.35, 2.0)
+                    calc_adc = int((target_trigger_v / range_v) * 32512)
+                    pico.trigger_threshold_adc = calc_adc
+                    
+                    ctx.logger.info(f"Dynamically set PicoScope Channel B to {range_idx} (+/- {range_v}V) for {cat}. Auto trigger ADC set to {calc_adc} (~{target_trigger_v:.2f}V).")
             b.custom_action("Auto-Configure PicoScope Range", configure_picoscope_g6_2)
 
             # Start capturing PicoScope waveform before setting coils
@@ -157,9 +222,12 @@ class G6ShortCircuitCurrentTest(BaseTest):
             b.set_plc_coil(PLCCoil.SCCC_TEST_START, True)
 
             # 38. After 20 ms, stop waveform capture and save the waveform.
-            def wait_and_stop_capture(ctx, hw):
+            def wait_and_stop_capture(ctx, hw, iteration=i):
                 time.sleep(0.02)
-                getattr(hw, "stop_waveform_capture", lambda: ctx.logger.info("Stopped and Saved Waveform Capture"))()
+                if hasattr(hw, "stop_waveform_capture"):
+                    hw.stop_waveform_capture(name=f"Waveform {iteration+4}")
+                else:
+                    ctx.logger.info(f"Stopped and Saved Waveform {iteration+4}")
                 
             b.custom_action("Wait 20ms and Stop Capture", wait_and_stop_capture)
             
@@ -181,7 +249,7 @@ class G6ShortCircuitCurrentTest(BaseTest):
             b.prompt_user("Select meter category (U2 or U3)", requires_input=True, save_as="meter_category_2")
             
             # Repeat 3 times (Second SC test)
-            b.loop(3, short_circuit_loop_2)
+            b.loop(3, short_circuit_loop_2, redo_offset=3)
 
         def build_skip_sample2(b: TestBuilder):
             b.custom_action("Test 1 Passed - Skipping Second Sample Test", lambda ctx, hw: ctx.logger.info("Test 1 Passed. Skipping second sample testing."))
@@ -223,6 +291,10 @@ class G6ShortCircuitCurrentTest(BaseTest):
         builder.stop_power_sequence(PLCCoil.CONTACTOR_120A_LOAD_BANK_COIL_ADDR)
         
     def _verify_and_store(self, ctx, hw):
+        if hw.picoscope:
+            hw.picoscope.trigger_mode = "manual"
+            ctx.logger.info("Restored PicoScope trigger mode to manual.")
+            
         if not hasattr(ctx, "test_results"):
             ctx.test_results = {}
             
@@ -231,8 +303,20 @@ class G6ShortCircuitCurrentTest(BaseTest):
             final = float(ctx.get_runtime_value("energy_final", 0))
             diff = abs(final - initial)
             g7_res = ctx.get_runtime_value("g7_result", "Skipped")
-            ctx.logger.info(f"G6 Test Completed. Energy difference: {diff}. G7 Result: {g7_res}. Coagulated Result: PASS")
-            ctx.test_results["success"] = True
+            
+            ctx.test_results["energy_difference"] = diff
+            ctx.test_results["g7_result"] = g7_res
+            
+            threshold_percent = ctx.config.get("testing", {}).get("energy_diff_threshold_percent", 1.0)
+            threshold_val = initial * (threshold_percent / 100.0)
+            
+            if diff > threshold_val:
+                ctx.logger.error(f"Test Failed: Energy diff {diff:.2f} exceeds {threshold_percent}% threshold.")
+                ctx.test_results["success"] = False
+                ctx.test_results["failure_reason"] = f"Energy diff > {threshold_percent}%"
+            else:
+                ctx.logger.info(f"G6 Test Completed. Energy diff: {diff:.2f}, G7 Result: {g7_res}. Coagulated Result: PASS")
+                ctx.test_results["success"] = True
         except ValueError:
             ctx.logger.error("Test Failed: Invalid energy values entered.")
             ctx.test_results["success"] = False

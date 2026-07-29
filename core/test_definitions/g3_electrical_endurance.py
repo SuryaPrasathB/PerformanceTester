@@ -199,13 +199,21 @@ class G3ElectricalEnduranceTest(BaseTest):
             weld_faults = ctx.get_runtime_value("total_weld_fault_cycles", 0)
             open_faults = ctx.get_runtime_value("total_open_fault_cycles", 0)
             
-            ctx.logger.info(f"G3 Test Completed. Energy diff: {diff:.2f}, Weld Faults: {weld_faults}, Open Faults: {open_faults}, G7: {g7_res}. Result: PASS")
-            
             ctx.test_results["energy_difference"] = diff
             ctx.test_results["g7_result"] = g7_res
             ctx.test_results["weld_faults"] = weld_faults
             ctx.test_results["open_faults"] = open_faults
-            ctx.test_results["success"] = True
+            
+            threshold_percent = ctx.config.get("testing", {}).get("energy_diff_threshold_percent", 1.0)
+            threshold_val = initial * (threshold_percent / 100.0)
+            
+            if diff > threshold_val:
+                ctx.logger.error(f"Test Failed: Energy diff {diff:.2f} exceeds {threshold_percent}% threshold.")
+                ctx.test_results["success"] = False
+                ctx.test_results["failure_reason"] = f"Energy diff > {threshold_percent}%"
+            else:
+                ctx.logger.info(f"G3 Test Completed. Energy diff: {diff:.2f}, Weld Faults: {weld_faults}, Open Faults: {open_faults}, G7: {g7_res}. Result: PASS")
+                ctx.test_results["success"] = True
             
         except ValueError:
             ctx.logger.error("Test Failed: Invalid energy values entered.")

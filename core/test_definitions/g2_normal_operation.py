@@ -59,9 +59,11 @@ class G2NormalOperationTest(BaseTest):
             final = float(ctx.get_runtime_value("energy_final", 0))
             
             # Simple threshold check
+            threshold_percent = ctx.config.get("testing", {}).get("energy_diff_threshold_percent", 1.0)
+            threshold_val = initial * (threshold_percent / 100.0)
             diff = abs(final - initial)
-            if diff > (initial * 0.01): # > 1% diff
-                ctx.logger.error(f"Test Failed: Energy difference ({diff}) > 1% threshold.")
+            if diff > threshold_val:
+                ctx.logger.error(f"Test Failed: Energy difference ({diff}) > {threshold_percent}% threshold.")
             else:
                 ctx.logger.info(f"Test Passed: Energy difference ({diff}) within threshold.")
             

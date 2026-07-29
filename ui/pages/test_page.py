@@ -850,6 +850,31 @@ class TestPage(QWidget, Ui_TestPage):
         card.override_requested.connect(self.handle_override_requested)
         card.redo_requested.connect(self.handle_redo_requested)
         
+        # Helper to save full resolution graph
+        def save_full_waveform_image():
+            session_id = getattr(self.test_runner.context, "db_row_id", None) if self.test_runner else None
+            if session_id:
+                import os
+                graphs_dir = "logs/graphs"
+                os.makedirs(graphs_dir, exist_ok=True)
+                safe_name = name.replace(" ", "_").lower()
+                file_path = os.path.join(graphs_dir, f"session_{session_id}_{test_id}_{safe_name}.png")
+                
+                from ui.widgets.waveform_graph import WaveformGraph
+                temp_graph = WaveformGraph()
+                temp_graph.setData(data, None, timebase, range_val, test_id=test_id)
+                temp_graph.calculated_pf = card.calculated_pf
+                temp_graph.measured_current = card.measured_current
+                temp_graph.pulse_duration = card.pulse_duration
+                temp_graph.resize(950, 600)
+                temp_graph.setAutoZoomEnabled(True)
+                
+                pm = temp_graph.grab()
+                if pm and not pm.isNull():
+                    pm.save(file_path)
+                
+                temp_graph.deleteLater()
+                
         # Check if card with this name already exists
         for i, existing_card in enumerate(self.dynamic_cards):
             if existing_card.name == name:
@@ -862,6 +887,8 @@ class TestPage(QWidget, Ui_TestPage):
                     self.horizontalLayout_graphs.addWidget(card)
                 self.dynamic_cards[i] = card
                 self.frame_graphs_container.show()
+                
+                save_full_waveform_image()
                 return
         
         # Limit the number of graphs to at most 3
@@ -874,6 +901,8 @@ class TestPage(QWidget, Ui_TestPage):
             
         self.horizontalLayout_graphs.addWidget(card)
         self.dynamic_cards.append(card)
+        
+        save_full_waveform_image()
 
     @Slot(dict)
     def handle_override_requested(self, data: dict):
@@ -884,24 +913,66 @@ class TestPage(QWidget, Ui_TestPage):
         pf = data.get('pf')
         curr = data.get('current')
         pixmap = data.get('pixmap')
+        card_name = data.get('name', '')
         
-        # Update context
-        self.test_runner.context.test_results['calculated_pf'] = pf
-        self.test_runner.context.test_results['measured_current'] = curr
+        # Determine the 0-based index from card name (e.g., "Waveform 1" -> index 0)
+        import re
+        match = re.search(r'\d+', card_name)
+        idx = int(match.group(0)) - 1 if match else -1
+        
+        # Update the list in the context so the average is recalculated
+        results = self.test_runner.context.test_results
+        
+        if idx >= 0:
+            if "pf_list" in results and idx < len(results["pf_list"]):
+                results["pf_list"][idx] = pf
+            if "measured_current_list" in results and idx < len(results["measured_current_list"]):
+                results["measured_current_list"][idx] = curr
+                
+        # Recalculate average if lists exist, otherwise just use the overridden value
+        if "pf_list" in results and len(results["pf_list"]) > 0:
+            results['calculated_pf'] = sum(results["pf_list"]) / len(results["pf_list"])
+        else:
+            results['calculated_pf'] = pf
+            
+        if "measured_current_list" in results and len(results["measured_current_list"]) > 0:
+            results['measured_current'] = sum(results["measured_current_list"]) / len(results["measured_current_list"])
+        else:
+            results['measured_current'] = curr
         
         # Save image
         if pixmap:
             import os
             graphs_dir = "logs/graphs"
             os.makedirs(graphs_dir, exist_ok=True)
-            session_id = self.test_runner.context.db_row_id
+            session_id = getattr(self.test_runner.context, 'db_row_id', None)
             if session_id:
-                file_path = os.path.join(graphs_dir, f"session_{session_id}_{test_id}.png")
+                safe_name = card_name.replace(" ", "_").lower()
+                # Overwrite the automatically generated image with the overridden one
+                file_path = os.path.join(graphs_dir, f"session_{session_id}_{test_id}_{safe_name}.png")
                 pixmap.save(file_path)
                 
-        # We don't have to manually update DB here because DB only saves pass/fail in the schema right now.
-        # But if the test is done, the UI summary might need a refresh.
-        self.update_status_text("Override Saved!")
+        # If the test is already complete, update the database
+        from core.test_engine.state_machine import TestState
+        if self.test_runner.state_machine.get_state() == TestState.COMPLETE:
+            # Re-verify the test results with the new values
+            if hasattr(self.test_runner, 'test') and hasattr(self.test_runner.test, 'verify'):
+                self.test_runner.test.verify(self.test_runner.context)
+            
+            is_success = self.test_runner.context.test_results.get("success", True)
+            outcome = "PASS" if is_success else "FAIL"
+            self.test_runner._finalize_test_in_db(outcome)
+            self.update_status_text(f"Override Saved & Result Updated to {outcome}!")
+            
+            # Revert to standard completion message after 3 seconds
+            from PySide6.QtCore import QTimer
+            QTimer.singleShot(3000, lambda: self.handle_test_finished())
+        else:
+            old_html = self.lbl_instruction.text()
+            self.update_status_text("Override Saved!")
+            
+            from PySide6.QtCore import QTimer
+            QTimer.singleShot(3000, lambda: self.lbl_instruction.setText(old_html))
 
     @Slot(str)
     def handle_redo_requested(self, card_name: str):

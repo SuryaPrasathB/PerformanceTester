@@ -4,7 +4,7 @@ from core.hardware_mapping import PLCCoil, MFMRegister
 import time
 import threading
 
-ACB_OPERATED_DELAY = 5  # Global delay in seconds applied whenever the ACB is operated (ON or OFF)
+import threading
 
 class ExecutableStep:
     def __init__(self, name: str, action: Callable, weight: int = 5, estimated_duration: int = 2, requires_input: bool = False, details: str = "", device: str = ""):
@@ -157,7 +157,35 @@ class TestBuilder:
         
         # Apply global delay whenever ACB is operated
         if coil == PLCCoil.ACB_COIL_ADDR:
-            self.wait(ACB_OPERATED_DELAY)
+            def acb_wait_action(ctx, hw):
+                import math
+                delay = ctx.config.get("testing", {}).get("acb_operated_delay_s", 5.0)
+                start_time = time.time()
+                total_duration = float(delay)
+                last_reported = -1
+                
+                while True:
+                    ctx.check_cancel()
+                    
+                    pre_pause = time.time()
+                    ctx.wait_if_paused()
+                    post_pause = time.time()
+                    pause_duration = post_pause - pre_pause
+                    if pause_duration > 0.05:
+                        start_time += pause_duration
+                    
+                    elapsed = time.time() - start_time
+                    remaining = total_duration - elapsed
+                    if remaining <= 0:
+                        break
+                    
+                    remaining_ceil = int(math.ceil(remaining))
+                    if remaining_ceil != last_reported:
+                        ctx.update_status(f"ACB Delay: {remaining_ceil}s...")
+                        last_reported = remaining_ceil
+                    
+                    time.sleep(0.1)
+            self.add_step("Wait for ACB Delay", acb_wait_action, duration=5, device="System")
             
         return self
 
@@ -465,7 +493,7 @@ class TestBuilder:
         self.add_step(f"Measure Current [{min_val}-{max_val}A]", action, device="MFM Meter")
         return self
         
-    def loop(self, count: int, loop_builder_func: Callable):
+    def loop(self, count: int, loop_builder_func: Callable, redo_offset: int = 0):
         """ Executes a nested sequence 'count' times. """
         # Capture the sub-steps to display in the UI
         dummy_builder = TestBuilder()
@@ -496,8 +524,8 @@ class TestBuilder:
                     
                     if isinstance(res, str) and res.startswith("REDO:"):
                         try:
-                            # 1-indexed from UI
-                            cycle_to_redo = int(res.split(":")[1]) - 1 
+                            # 1-indexed from UI, minus the redo_offset
+                            cycle_to_redo = int(res.split(":")[1]) - 1 - redo_offset
                             if 0 <= cycle_to_redo < count:
                                 ctx.update_status(f"Redoing Loop {cycle_to_redo+1}/{count}")
                                 ctx.set_loop_iteration(cycle_to_redo)
@@ -506,7 +534,7 @@ class TestBuilder:
                                 for step in sub_builder._steps:
                                     self._execute_step(ctx, step, hw, min_duration)
                             else:
-                                ctx.logger.warning(f"Invalid cycle to redo: {cycle_to_redo+1}")
+                                ctx.logger.warning(f"Invalid cycle to redo: {cycle_to_redo+1+redo_offset}")
                         except ValueError:
                             ctx.logger.warning(f"Failed to parse REDO command: {res}")
             finally:

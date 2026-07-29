@@ -89,8 +89,19 @@ class G7MinimumSwitchedCurrentTest(BaseTest):
             initial = float(ctx.get_runtime_value("energy_initial", 0))
             final = float(ctx.get_runtime_value("energy_final", 0))
             diff = abs(final - initial)
-            ctx.logger.info(f"G7 Test Completed. Energy difference: {diff}. Coagulated Result: PASS")
-            ctx.test_results["success"] = True
+            
+            ctx.test_results["energy_difference"] = diff
+            
+            threshold_percent = ctx.config.get("testing", {}).get("energy_diff_threshold_percent", 1.0)
+            threshold_val = initial * (threshold_percent / 100.0)
+            
+            if diff > threshold_val:
+                ctx.logger.error(f"Test Failed: Energy diff {diff:.2f} exceeds {threshold_percent}% threshold.")
+                ctx.test_results["success"] = False
+                ctx.test_results["failure_reason"] = f"Energy diff > {threshold_percent}%"
+            else:
+                ctx.logger.info(f"G7 Test Completed. Energy diff: {diff:.2f}. Coagulated Result: PASS")
+                ctx.test_results["success"] = True
         except ValueError:
             ctx.logger.error("Test Failed: Invalid energy values entered.")
             ctx.test_results["success"] = False

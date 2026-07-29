@@ -118,8 +118,8 @@ class TestDetailsDialog(QDialog):
         vbox = QVBoxLayout(container)
         
         for img_path in images:
-            test_name = os.path.basename(img_path).split('_')[-1].replace('.png', '').upper()
-            lbl_title = QLabel(f"{test_name} Waveform")
+            test_name = os.path.basename(img_path).replace(f"session_{self.session_data.get('id')}_", "").replace('.png', '').replace('_', ' ').title()
+            lbl_title = QLabel(f"{test_name}")
             lbl_title.setStyleSheet("font-size: 16px; font-weight: bold; margin-top: 15px;")
             vbox.addWidget(lbl_title)
             
@@ -174,8 +174,12 @@ class TestDetailsDialog(QDialog):
             html += "</tr>"
             
             if reason:
-                html += f"<tr><td colspan='4' style='padding-left: 20px; color: #EF4444; font-size: 12px; background-color: rgba(239, 68, 68, 0.05);'>"
-                html += f"<b>Error:</b> {reason}</td></tr>"
+                if status == "PASS" and reason.startswith("Measurements:"):
+                    html += f"<tr><td colspan='4' style='padding-left: 20px; color: #10B981; font-size: 12px; background-color: rgba(16, 185, 129, 0.05);'>"
+                    html += f"<b>Details:</b> {reason}</td></tr>"
+                else:
+                    html += f"<tr><td colspan='4' style='padding-left: 20px; color: #EF4444; font-size: 12px; background-color: rgba(239, 68, 68, 0.05);'>"
+                    html += f"<b>Error:</b> {reason}</td></tr>"
                 
         html += "</table>"
         self.txt_details.setHtml(html)
@@ -526,8 +530,9 @@ class ReportsPage(QWidget):
                 .runs-table td {{ padding: 10px; border-bottom: 1px solid #E2E8F0; }}
                 .pass {{ color: #10B981; font-weight: bold; }}
                 .fail {{ color: #EF4444; font-weight: bold; }}
-                .cancel {{ color: #F59E0B; font-weight: bold; }}
+                .cancel {{ font-weight: bold; color: #F59E0B; }}
                 .reason {{ font-size: 10pt; color: #EF4444; background-color: #FEF2F2; padding: 6px; margin: 4px 0; border-radius: 4px; }}
+                .details-success {{ font-size: 10pt; color: #10B981; background-color: #ECFDF5; padding: 6px; margin: 4px 0; border-radius: 4px; }}
                 .signature-line {{ text-align: center; padding-top: 5px; font-size: 10pt; }}
             </style>
         </head>
@@ -633,10 +638,12 @@ class ReportsPage(QWidget):
                     </tr>
                 """
                 if reason:
-                    label = "Details:" if "Measurements:" in reason else "Error Details:"
+                    is_passing_detail = status == "PASS" and reason.startswith("Measurements:")
+                    label = "Details:" if is_passing_detail else "Error Details:"
+                    cls_name = "details-success" if is_passing_detail else "reason"
                     html += f"""
                         <tr>
-                            <td colspan="4" class="reason">
+                            <td colspan="4" class="{cls_name}">
                                 <b>{label}</b> {reason}
                             </td>
                         </tr>
@@ -669,7 +676,7 @@ class ReportsPage(QWidget):
             for file in os.listdir(graphs_dir):
                 if file.startswith(f"session_{session_id}_") and file.endswith(".png"):
                     img_path = os.path.abspath(os.path.join(graphs_dir, file)).replace('\\', '/')
-                    test_name = file.split('_')[-1].replace('.png', '').upper()
+                    test_name = file.replace(f"session_{session_id}_", "").replace(".png", "").replace("_", " ").title()
                     
                     html += f"""
                     <div style="page-break-before: always;"></div>
@@ -678,7 +685,7 @@ class ReportsPage(QWidget):
                         <tr><td height="1" bgcolor="#E2E8F0" style="font-size: 1px; line-height: 1px;">&nbsp;</td></tr>
                     </table>
                     <div style="text-align: center; margin-top: 20px;">
-                        <img src="file:///{img_path}" style="max-width: 100%;" />
+                        <img src="{img_path}" width="700" />
                     </div>
                     """
                     

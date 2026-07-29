@@ -1,6 +1,6 @@
 ; Inno Setup Script for Pro-Perf application
 ; Defines parameters for the Windows Installer
-#define MyAppVersion "1.3.5"
+#define MyAppVersion "1.4.2"
 [Setup]
 AppId={{5D8B8497-2DF0-4FA9-A1B9-724FE35FCE99}}
 AppName=Pro-Perf

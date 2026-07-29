@@ -168,7 +168,13 @@ class HardwareService(QObject):
                                     self.context.update_runtime_value("power_factor", pf)
                                     if not isinstance(self.context.test_results, dict):
                                         self.context.test_results = {}
-                                    self.context.test_results["calculated_pf"] = pf
+                                    
+                                    if "pf_list" not in self.context.test_results:
+                                        self.context.test_results["pf_list"] = []
+                                    self.context.test_results["pf_list"].append(pf)
+                                    
+                                    avg_pf = sum(self.context.test_results["pf_list"]) / len(self.context.test_results["pf_list"])
+                                    self.context.test_results["calculated_pf"] = avg_pf
                             else:
                                 self.logger.info("Hardware Service: No current pulse detected, defaulting PF calculation to UPF.")
                             
@@ -181,7 +187,13 @@ class HardwareService(QObject):
                                 self.context.update_runtime_value("peak_voltage", peak_v)
                                 if not isinstance(self.context.test_results, dict):
                                     self.context.test_results = {}
-                                self.context.test_results["measured_current"] = meas_i
+                                
+                                if "measured_current_list" not in self.context.test_results:
+                                    self.context.test_results["measured_current_list"] = []
+                                self.context.test_results["measured_current_list"].append(meas_i)
+                                
+                                avg_curr = sum(self.context.test_results["measured_current_list"]) / len(self.context.test_results["measured_current_list"])
+                                self.context.test_results["measured_current"] = avg_curr
                                 self.context.test_results["peak_voltage"] = peak_v
                         except Exception as e:
                             self.logger.error(f"Hardware Service: Error calculating parameters from waveform: {e}")

@@ -64,6 +64,8 @@
     "database": "meter_test_db"
   },
   "testing": {
-    "min_step_duration_s": 1.0
+    "min_step_duration_s": 1.0,
+    "acb_operated_delay_s": 5.0,
+    "energy_diff_threshold_percent": 1.0
   }
 }

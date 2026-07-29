@@ -46,9 +46,14 @@ class WaveformPreview(QFrame):
         # Determine min/max values for scaling data_a
         max_val_a = max(data_a)
         min_val_a = min(data_a)
+        abs_max_a = max(abs(max_val_a), abs(min_val_a))
+        if abs_max_a == 0.0:
+            abs_max_a = 1.0
+            
+        # Force symmetry so the waveform is perfectly centered
+        max_val_a = abs_max_a
+        min_val_a = -abs_max_a
         span_a = max_val_a - min_val_a
-        if span_a == 0.0:
-            span_a = 1.0
             
         # Draw gridless zero-axis line
         painter.setPen(QPen(QColor("#F1F5F9"), 1))
@@ -80,9 +85,13 @@ class WaveformPreview(QFrame):
         if data_b and len(data_b) >= 2:
             max_val_b = max(data_b)
             min_val_b = min(data_b)
+            abs_max_b = max(abs(max_val_b), abs(min_val_b))
+            if abs_max_b == 0.0:
+                abs_max_b = 1.0
+                
+            max_val_b = abs_max_b
+            min_val_b = -abs_max_b
             span_b = max_val_b - min_val_b
-            if span_b == 0.0:
-                span_b = 1.0
                 
             painter.setPen(QPen(QColor("#EF4444"), 1.2))
             last_pt = None
@@ -216,23 +225,27 @@ class WaveformCard(QFrame):
             self.lbl_pf.setAlignment(Qt.AlignCenter)
             layout.addWidget(self.lbl_pf)
 
-        # Add Redo Button on top right
+        # Add Redo Button at the bottom
         from PySide6.QtWidgets import QPushButton
-        self.btn_redo = QPushButton("Redo", self)
-        self.btn_redo.setFixedSize(60, 24)
+        self.btn_redo = QPushButton("Redo Test", self)
+        self.btn_redo.setFixedSize(120, 28)
         self.btn_redo.setStyleSheet("""
             QPushButton {
-                background-color: #EF4444;
-                color: white;
+                background-color: #FEF2F2;
+                color: #EF4444;
+                border: 1px solid #F87171;
                 font-weight: bold;
                 border-radius: 4px;
                 font-size: 11px;
             }
             QPushButton:hover {
-                background-color: #DC2626;
+                background-color: #FEE2E2;
+            }
+            QPushButton:pressed {
+                background-color: #FECACA;
             }
         """)
-        self.btn_redo.move(170, 8) 
+        layout.addWidget(self.btn_redo, alignment=Qt.AlignCenter)
         self.btn_redo.hide()
         self.btn_redo.clicked.connect(lambda: self.redo_requested.emit(self.name))
         self.in_review_mode = False
@@ -247,6 +260,9 @@ class WaveformCard(QFrame):
     def mousePressEvent(self, event):
         """Launches the detailed interactive expanded view dialog on left click."""
         if event.button() == Qt.LeftButton:
+            # Prevent opening the dialog if the user clicked on or very close to the redo button
+            if self.btn_redo.isVisible() and self.btn_redo.geometry().adjusted(-5, -5, 5, 5).contains(event.pos()):
+                return
             self.open_analysis_dialog()
 
 
@@ -430,7 +446,8 @@ class WaveformCard(QFrame):
                 'test_id': self.test_id,
                 'pf': pf,
                 'current': curr,
-                'pixmap': pixmap
+                'pixmap': pixmap,
+                'name': self.name
             })
             dialog.accept()
             
