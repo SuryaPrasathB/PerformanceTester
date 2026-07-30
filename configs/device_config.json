@@ -3,9 +3,9 @@
     {
       "name": "PLC1",
       "type": "modbus",
-      "ip": "192.168.0.123",
+      "ip": "192.168.0.109",
       "port": "502",
-      "mock": true
+      "mock": false
     },
     {
       "name": "EnergyMeter1",

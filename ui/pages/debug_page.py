@@ -155,11 +155,13 @@ class DebugPage(QWidget, Ui_DebugPage):
         self.main_window = main_window
         self.is_active = False
         self.coil_states = {}
+        self.coil_lockout_times = {}
         self.worker = None
         
         # Initialize default state for all coils
         for coil in PLCCoil:
             self.coil_states[coil] = False
+            self.coil_lockout_times[coil] = 0
             
         # Build the custom interactive layout programmatically
         self.build_custom_ui()
@@ -883,17 +885,32 @@ class DebugPage(QWidget, Ui_DebugPage):
         current_val = self.coil_states.get(coil_enum, False)
         new_val = not current_val
         
-        if hasattr(plc_driver, "write_coil"):
-            success = plc_driver.write_coil(address=addr, value=new_val)
-        else:
-            success = plc_driver.write_data(address=addr, value=1 if new_val else 0)
-            
-        if success:
-            self.coil_states[coil_enum] = new_val
-            self.update_coil_led(coil_enum, new_val)
-            self.main_window.append_log("INFO", f"Debug Screen: PLC coil {coil_enum.name} (0x{addr:02X}) set to {new_val}")
-        else:
-            QMessageBox.critical(self, "Write Failed", f"Failed to write to PLC coil {coil_enum.name}.")
+        import time
+        # Optimistic UI Update (Instantaneous Feedback)
+        self.coil_states[coil_enum] = new_val
+        self.coil_lockout_times[coil_enum] = time.time()
+        self.update_coil_led(coil_enum, new_val)
+        
+        def write_task():
+            try:
+                if hasattr(plc_driver, "write_coil"):
+                    success = plc_driver.write_coil(address=addr, value=new_val)
+                else:
+                    success = plc_driver.write_data(address=addr, value=1 if new_val else 0)
+                    
+                if success:
+                    from PySide6.QtCore import QMetaObject, Qt, Q_ARG
+                    QMetaObject.invokeMethod(self.main_window, "append_log", 
+                                             Qt.QueuedConnection, 
+                                             Q_ARG(str, "INFO"), 
+                                             Q_ARG(str, f"Debug Screen: PLC coil {coil_enum.name} (0x{addr:02X}) set to {new_val}"))
+                # If it fails, we don't show a blocking QMessageBox. 
+                # The DebugPollWorker will automatically revert the UI state on its next poll cycle.
+            except Exception as e:
+                pass
+                
+        # Run write operation in a background thread to prevent UI blocking
+        threading.Thread(target=write_task, daemon=True).start()
 
     def update_coil_led(self, coil_enum, val: bool):
         self.coil_states[coil_enum] = val
@@ -1143,8 +1160,13 @@ class DebugPage(QWidget, Ui_DebugPage):
 
         # 2. Update PLC
         self.update_connection_led(self.lbl_plc_led, self.lbl_plc_status, data.get("plc_connected", False))
+        
+        import time
+        current_time = time.time()
         for coil_enum, val in data.get("coil_states", {}).items():
-            self.update_coil_led(coil_enum, val)
+            last_toggled = getattr(self, "coil_lockout_times", {}).get(coil_enum, 0)
+            if current_time - last_toggled > 1.5:  # Lockout polling updates for 1.5s after toggle to prevent flicker
+                self.update_coil_led(coil_enum, val)
 
         # 3. Update Energy Meter
         self.update_connection_led(self.lbl_meter_led, self.lbl_meter_status, data.get("meter_connected", False))

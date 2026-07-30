@@ -150,7 +150,9 @@ class TestBuilder:
         def action(ctx, hw):
             ctx.update_status(f"{action_verb} {friendly_name}")
             try:
-                hw.plc.write_coil(coil.value, state)
+                success = hw.plc.write_coil(coil.value, state)
+                if not success:
+                    raise Exception(f"Failed to write to PLC for {friendly_name}")
             except AttributeError:
                 ctx.logger.info(f"MOCK: PLC.write_coil({coil.value}, {state})")
         self.add_step(f"Turn {'ON' if state else 'OFF'} {friendly_name}", action, device="PLC")

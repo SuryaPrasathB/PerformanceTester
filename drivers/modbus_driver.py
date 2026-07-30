@@ -233,26 +233,35 @@ class ModbusDriver(BaseDriver):
                 self.logger.error(f"Cannot write: Modbus not connected.")
                 return False
 
-            if self.is_serial and not self.mock_mode:
-                if hasattr(self.client, 'socket') and self.client.socket:
-                    try:
-                        self.client.socket.reset_input_buffer()
-                    except Exception:
-                        pass
-
-            try:
-                result = self.client.write_register(address=address, value=value, slave=slave)
-                if result.isError():
-                    self.logger.error(f"Modbus write error (addr={address}, val={value}): {result}")
-                    return False
-                self.logger.debug(f"Modbus wrote {value} to address {address}.")
-                return True
-            except Exception as e:
-                self.logger.error(f"Modbus write exception (addr={address}, val={value}): {e}")
-                return False
-            finally:
+            for attempt in range(3):
                 if self.is_serial and not self.mock_mode:
-                    time.sleep(self.turnaround_delay)
+                    if hasattr(self.client, 'socket') and self.client.socket:
+                        try:
+                            self.client.socket.reset_input_buffer()
+                        except Exception:
+                            pass
+
+                try:
+                    result = self.client.write_register(address=address, value=value, slave=slave)
+                    if result.isError():
+                        if attempt < 2:
+                            time.sleep(0.2)
+                            continue
+                        self.logger.error(f"Modbus write error (addr={address}, val={value}) after 3 attempts: {result}")
+                        return False
+                    self.logger.debug(f"Modbus wrote {value} to address {address}.")
+                    
+                    if self.is_serial and not self.mock_mode:
+                        time.sleep(self.turnaround_delay)
+                    return True
+                except Exception as e:
+                    if attempt < 2:
+                        time.sleep(0.2)
+                        continue
+                    self.logger.error(f"Modbus write exception (addr={address}, val={value}) after 3 attempts: {e}")
+                    return False
+                    
+            return False
 
     def read_float(self, address: int, function_code: int = 4, swapped: bool = True, slave: int = None) -> float:
         """
@@ -330,27 +339,36 @@ class ModbusDriver(BaseDriver):
                 self.logger.error("Cannot read coil: Modbus not connected.")
                 return False
 
-            if self.is_serial and not self.mock_mode:
-                if hasattr(self.client, 'socket') and self.client.socket:
-                    try:
-                        self.client.socket.reset_input_buffer()
-                    except Exception:
-                        pass
-
-            try:
-                result = self.client.read_coils(address=address, count=1, slave=slave)
-                if result.isError():
-                    self.logger.error(f"Modbus read coil error (addr={address}): {result}")
-                    return False
-                val = result.bits[0] if result.bits else False
-                self.logger.debug(f"Modbus read coil (addr={address}): {val}")
-                return val
-            except Exception as e:
-                self.logger.error(f"Modbus read coil exception (addr={address}): {e}")
-                return False
-            finally:
+            for attempt in range(3):
                 if self.is_serial and not self.mock_mode:
-                    time.sleep(self.turnaround_delay)
+                    if hasattr(self.client, 'socket') and self.client.socket:
+                        try:
+                            self.client.socket.reset_input_buffer()
+                        except Exception:
+                            pass
+
+                try:
+                    result = self.client.read_coils(address=address, count=1, slave=slave)
+                    if result.isError():
+                        if attempt < 2:
+                            time.sleep(0.2)
+                            continue
+                        self.logger.error(f"Modbus read coil error (addr={address}) after 3 attempts: {result}")
+                        return False
+                    val = result.bits[0] if result.bits else False
+                    self.logger.debug(f"Modbus read coil (addr={address}): {val}")
+                    
+                    if self.is_serial and not self.mock_mode:
+                        time.sleep(self.turnaround_delay)
+                    return val
+                except Exception as e:
+                    if attempt < 2:
+                        time.sleep(0.2)
+                        continue
+                    self.logger.error(f"Modbus read coil exception (addr={address}) after 3 attempts: {e}")
+                    return False
+                    
+            return False
 
     def write_coil(self, address: int, value: bool, slave: int = None) -> bool:
         """Writes a single coil (binary value) to the Modbus device."""
@@ -371,26 +389,35 @@ class ModbusDriver(BaseDriver):
                 self.logger.error("Cannot write coil: Modbus not connected.")
                 return False
 
-            if self.is_serial and not self.mock_mode:
-                if hasattr(self.client, 'socket') and self.client.socket:
-                    try:
-                        self.client.socket.reset_input_buffer()
-                    except Exception:
-                        pass
-
-            try:
-                result = self.client.write_coil(address=address, value=value, slave=slave)
-                if result.isError():
-                    self.logger.error(f"Modbus write coil error (addr={address}, val={value}): {result}")
-                    return False
-                self.logger.debug(f"Modbus wrote coil {value} to address {address}.")
-                return True
-            except Exception as e:
-                self.logger.error(f"Modbus write coil exception (addr={address}, val={value}): {e}")
-                return False
-            finally:
+            for attempt in range(3):
                 if self.is_serial and not self.mock_mode:
-                    time.sleep(self.turnaround_delay)
+                    if hasattr(self.client, 'socket') and self.client.socket:
+                        try:
+                            self.client.socket.reset_input_buffer()
+                        except Exception:
+                            pass
+
+                try:
+                    result = self.client.write_coil(address=address, value=value, slave=slave)
+                    if result.isError():
+                        if attempt < 2:
+                            time.sleep(0.2)
+                            continue
+                        self.logger.error(f"Modbus write coil error (addr={address}, val={value}) after 3 attempts: {result}")
+                        return False
+                    self.logger.debug(f"Modbus wrote coil {value} to address {address}.")
+                    
+                    if self.is_serial and not self.mock_mode:
+                        time.sleep(self.turnaround_delay)
+                    return True
+                except Exception as e:
+                    if attempt < 2:
+                        time.sleep(0.2)
+                        continue
+                    self.logger.error(f"Modbus write coil exception (addr={address}, val={value}) after 3 attempts: {e}")
+                    return False
+                    
+            return False
 
 
 
