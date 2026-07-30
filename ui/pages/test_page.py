@@ -943,12 +943,18 @@ class TestPage(QWidget, Ui_TestPage):
                 
         # Recalculate average if lists exist, otherwise just use the overridden value
         if "pf_list" in results and len(results["pf_list"]) > 0:
-            results['calculated_pf'] = sum(results["pf_list"]) / len(results["pf_list"])
+            active_pfs = results["pf_list"]
+            if test_id.lower() == "g6" and len(active_pfs) > 3:
+                active_pfs = active_pfs[3:]
+            results['calculated_pf'] = sum(active_pfs) / len(active_pfs)
         else:
             results['calculated_pf'] = pf
             
         if "measured_current_list" in results and len(results["measured_current_list"]) > 0:
-            results['measured_current'] = sum(results["measured_current_list"]) / len(results["measured_current_list"])
+            active_currs = results["measured_current_list"]
+            if test_id.lower() == "g6" and len(active_currs) > 3:
+                active_currs = active_currs[3:]
+            results['measured_current'] = sum(active_currs) / len(active_currs)
         else:
             results['measured_current'] = curr
         

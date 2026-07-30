@@ -173,7 +173,11 @@ class HardwareService(QObject):
                                         self.context.test_results["pf_list"] = []
                                     self.context.test_results["pf_list"].append(pf)
                                     
-                                    avg_pf = sum(self.context.test_results["pf_list"]) / len(self.context.test_results["pf_list"])
+                                    active_pfs = self.context.test_results["pf_list"]
+                                    if test_id == "g6" and len(active_pfs) > 3:
+                                        active_pfs = active_pfs[3:]
+                                        
+                                    avg_pf = sum(active_pfs) / len(active_pfs)
                                     self.context.test_results["calculated_pf"] = avg_pf
                             else:
                                 self.logger.info("Hardware Service: No current pulse detected, defaulting PF calculation to UPF.")
@@ -192,7 +196,11 @@ class HardwareService(QObject):
                                     self.context.test_results["measured_current_list"] = []
                                 self.context.test_results["measured_current_list"].append(meas_i)
                                 
-                                avg_curr = sum(self.context.test_results["measured_current_list"]) / len(self.context.test_results["measured_current_list"])
+                                active_currs = self.context.test_results["measured_current_list"]
+                                if test_id == "g6" and len(active_currs) > 3:
+                                    active_currs = active_currs[3:]
+                                    
+                                avg_curr = sum(active_currs) / len(active_currs)
                                 self.context.test_results["measured_current"] = avg_curr
                                 self.context.test_results["peak_voltage"] = peak_v
                         except Exception as e:
