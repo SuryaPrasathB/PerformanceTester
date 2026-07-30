@@ -283,6 +283,7 @@ class TestPage(QWidget, Ui_TestPage):
             self.main_window.update_hardware_status("System", "Initialization Complete")
             
         self.cmb_meter_profile.setEnabled(False)
+        self.list_tests.setEnabled(False)
         self.btn_start.setEnabled(False)
         self.btn_stop.setEnabled(True)
         self.btn_abort.setEnabled(True)
@@ -402,6 +403,7 @@ class TestPage(QWidget, Ui_TestPage):
         self.lbl_live_data.setText("STATE: IDLE | V: -- V | I: -- A | PF: --")
         self.progress_anim.stop()
         self.cmb_meter_profile.setEnabled(True)
+        self.list_tests.setEnabled(True)
         self.btn_start.setEnabled(True)
         self.btn_stop.setEnabled(False)
         self.btn_abort.setEnabled(False)
@@ -452,13 +454,15 @@ class TestPage(QWidget, Ui_TestPage):
         calculated_pf_str = ""
         measured_curr_str = ""
         if self.test_runner and isinstance(self.test_runner.context.test_results, dict):
-            calc_pf = self.test_runner.context.test_results.get("calculated_pf")
-            if calc_pf is not None:
-                calculated_pf_str = f"<br><span style='font-size: 16px; color: {text_color};'>Calculated PF: <span style='font-weight: bold; color: #10B981;'>{calc_pf:.3f}</span></span>"
-            
-            meas_curr = self.test_runner.context.test_results.get("measured_current")
-            if meas_curr is not None:
-                measured_curr_str = f"<br><span style='font-size: 16px; color: {text_color};'>Measured Current: <span style='font-weight: bold; color: #F59E0B;'>{meas_curr:.1f} A</span></span>"
+            test_id = getattr(self.test_runner.test, "test_identifier", "unknown").lower()
+            if test_id != "g5":
+                calc_pf = self.test_runner.context.test_results.get("calculated_pf")
+                if calc_pf is not None:
+                    calculated_pf_str = f"<br><span style='font-size: 16px; color: {text_color};'>Calculated PF: <span style='font-weight: bold; color: #10B981;'>{calc_pf:.3f}</span></span>"
+                
+                meas_curr = self.test_runner.context.test_results.get("measured_current")
+                if meas_curr is not None:
+                    measured_curr_str = f"<br><span style='font-size: 16px; color: {text_color};'>Measured Current: <span style='font-weight: bold; color: #F59E0B;'>{meas_curr:.1f} A</span></span>"
                 
         failure_reason_str = ""
         if result != "PASS" and self.test_runner and getattr(self.test_runner, "failure_reason", None):

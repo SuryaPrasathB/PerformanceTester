@@ -48,6 +48,7 @@
       "trigger_mode": "auto",
       "trigger_threshold_adc": 1000,
       "use_window_trigger": true,
+      "pre_trigger_percent": 30,
       "mock": true
     }
   ],

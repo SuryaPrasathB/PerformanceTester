@@ -133,6 +133,7 @@ class PicoScopeDriver(BaseDriver):
         self.trigger_mode = config.get("trigger_mode", "manual")  # "auto" or "manual"
         self.trigger_threshold_adc = config.get("trigger_threshold_adc", 1000)
         self.use_window_trigger = config.get("use_window_trigger", False)
+        self.pre_trigger_percent = config.get("pre_trigger_percent", 30)
         self.mock_mode = config.get("mock", False)
 
     def connect(self) -> bool:
@@ -160,6 +161,9 @@ class PicoScopeDriver(BaseDriver):
                 ps2000.ps2000_set_channel(self.handle, 0, 1 if self.enable_channel_a else 0, 1, self.range_a_index)
                 # Enable or Disable Channel B
                 ps2000.ps2000_set_channel(self.handle, 1, 1 if self.enable_channel_b else 0, 1, self.range_b_index)
+                
+                # Perform one-time setup of Advanced Window Trigger upon connection
+                self.setup_advanced_trigger(force=True)
                 return True
             else:
                 self.logger.error("PicoScope: Failed to open device unit. PicoScope is not connected.")
@@ -192,8 +196,70 @@ class PicoScopeDriver(BaseDriver):
                 self.is_connected = False
         return True
 
+    def setup_advanced_trigger(self, force: bool = False) -> bool:
+        """Configures Advanced Window Trigger once per range setup, avoiding mode switching during captures."""
+        if self.mock_mode or self.handle <= 0 or not ps2000:
+            return True
+
+        trigger_source = 1 if self.enable_channel_b else 0
+        active_range_idx = self.range_b_index if trigger_source == 1 else self.range_a_index
+        RANGE_MAP = {
+            0: 0.01, 1: 0.02, 2: 0.05, 3: 0.1, 4: 0.2, 
+            5: 0.5, 6: 1.0, 7: 2.0, 8: 5.0, 9: 10.0, 10: 20.0
+        }
+        active_range_v = RANGE_MAP.get(active_range_idx, 20.0)
+        target_threshold_v = 0.5
+        dynamic_adc_threshold = int((target_threshold_v / active_range_v) * 32512)
+        pre_trig_delay = -abs(self.pre_trigger_percent)
+
+        cache_key = (trigger_source, active_range_idx, dynamic_adc_threshold, pre_trig_delay)
+        if not force and getattr(self, "_configured_trigger_key", None) == cache_key:
+            return True
+
+        self.logger.info(f"PicoScope: Configuring Advanced Window Trigger -> {target_threshold_v:.3f}V (ADC: {dynamic_adc_threshold}), Pre-Trigger: {abs(self.pre_trigger_percent)}% on Range: {active_range_v}V")
+        
+        try:
+            if hasattr(ps2000, "ps2000SetAdvTriggerChannelProperties"):
+                prop = PS2000_TRIGGER_CHANNEL_PROPERTIES()
+                prop.thresholdMajor = dynamic_adc_threshold
+                prop.thresholdMinor = -dynamic_adc_threshold
+                prop.hysteresis = 256  # ~0.78% hysteresis
+                prop.channel = trigger_source
+                prop.thresholdMode = 1  # WINDOW
+
+                auto_ms = 1000  # 1000 ms auto-trigger timeout
+
+                # Set configured pre-trigger delay on active trigger channel
+                t_status0 = ps2000.ps2000_set_trigger(self.handle, trigger_source, dynamic_adc_threshold, 0, pre_trig_delay, auto_ms)
+                
+                # Apply advanced trigger configuration
+                t_status1 = ps2000.ps2000SetAdvTriggerChannelProperties(self.handle, ctypes.byref(prop), 1, auto_ms)
+
+                cond = PS2000_TRIGGER_CONDITIONS()
+                cond.channelA = 1 if trigger_source == 0 else 0
+                cond.channelB = 1 if trigger_source == 1 else 0
+                cond.channelC = 0
+                cond.channelD = 0
+                cond.ext = 0
+                cond.pwq = 0
+                t_status2 = ps2000.ps2000SetAdvTriggerChannelConditions(self.handle, ctypes.byref(cond), 1)
+
+                dirA = 1 if trigger_source == 0 else 0
+                dirB = 1 if trigger_source == 1 else 0
+                t_status3 = ps2000.ps2000SetAdvTriggerChannelDirections(self.handle, dirA, dirB, 0, 0, 0)
+
+                self._configured_trigger_key = cache_key
+                self.logger.debug(f"PicoScope: Advanced trigger set up (base:{t_status0}, props:{t_status1}, conds:{t_status2}, dirs:{t_status3})")
+            else:
+                ps2000.ps2000_set_trigger(self.handle, trigger_source, self.trigger_threshold_adc, 0, pre_trig_delay, 1000)
+                self._configured_trigger_key = cache_key
+            return True
+        except Exception as e:
+            self.logger.error(f"PicoScope: Error configuring advanced trigger: {e}")
+            return False
+
     def set_channel_ranges(self, range_a_index: int, range_b_index: int):
-        """Dynamically reconfigures the channel voltage ranges."""
+        """Dynamically reconfigures channel voltage ranges and updates trigger once."""
         self.range_a_index = range_a_index
         self.range_b_index = range_b_index
         if self.handle > 0 and ps2000:
@@ -202,9 +268,11 @@ class PicoScopeDriver(BaseDriver):
             # Enable or Disable Channel B
             ps2000.ps2000_set_channel(self.handle, 1, 1 if self.enable_channel_b else 0, 1, self.range_b_index)
             self.logger.info(f"PicoScope: Channel ranges updated. A:{range_a_index}, B:{range_b_index}")
+            # Reconfigure advanced trigger for new scale
+            self.setup_advanced_trigger(force=True)
 
     def start_capture(self) -> bool:
-        """Starts a block capture sequence."""
+        """Starts a block capture sequence using pre-configured Advanced Window Trigger."""
         if not self.is_connected:
             self.logger.error("PicoScope: Cannot start capture, device not connected.")
             return False
@@ -218,80 +286,8 @@ class PicoScopeDriver(BaseDriver):
             
         if ps2000:
             try:
-                if self.trigger_mode == "auto":
-                    trigger_source = 1 if self.enable_channel_b else 0
-                    
-                    if self.use_window_trigger and hasattr(ps2000, "ps2000SetAdvTriggerChannelProperties"):
-                        self.logger.info("PicoScope: Configuring Auto Capture Mode (Advanced Window Trigger)")
-                        
-                        # Determine the active range for the trigger channel
-                        active_range_idx = self.range_b_index if trigger_source == 1 else self.range_a_index
-                        RANGE_MAP = {
-                            0: 0.01, 1: 0.02, 2: 0.05, 3: 0.1, 4: 0.2, 
-                            5: 0.5, 6: 1.0, 7: 2.0, 8: 5.0, 9: 10.0, 10: 20.0
-                        }
-                        active_range_v = RANGE_MAP.get(active_range_idx, 20.0)
-                        
-                        # Target threshold is fixed to 500mV (0.5V) irrespective of the range
-                        target_threshold_v = 0.5
-                        
-                        # Convert target voltage to ADC counts
-                        dynamic_adc_threshold = int((target_threshold_v / active_range_v) * 32512)
-                        
-                        self.logger.info(f"PicoScope: Dynamic Trigger Threshold -> {target_threshold_v:.3f}V (ADC: {dynamic_adc_threshold}) on Range: {active_range_v}V")
-                        
-                        prop = PS2000_TRIGGER_CHANNEL_PROPERTIES()
-                        prop.thresholdMajor = dynamic_adc_threshold
-                        prop.thresholdMinor = -dynamic_adc_threshold
-                        prop.hysteresis = 256 # ~0.78% hysteresis
-                        prop.channel = trigger_source
-                        prop.thresholdMode = 1 # WINDOW
-                        
-                        # We must first disable the standard trigger to rely completely on the advanced trigger
-                        t_status0 = ps2000.ps2000_set_trigger(self.handle, 5, 0, 0, -30, 0)
-                        
-                        # Apply properties
-                        t_status1 = ps2000.ps2000SetAdvTriggerChannelProperties(self.handle, ctypes.byref(prop), 1, 0)
-                        
-                        # Apply conditions (Channel B = 1 (True))
-                        cond = PS2000_TRIGGER_CONDITIONS()
-                        cond.channelA = 1 if trigger_source == 0 else 0
-                        cond.channelB = 1 if trigger_source == 1 else 0
-                        cond.channelC = 0
-                        cond.channelD = 0
-                        cond.ext = 0
-                        cond.pwq = 0
-                        t_status2 = ps2000.ps2000SetAdvTriggerChannelConditions(self.handle, ctypes.byref(cond), 1)
-                        
-                        # Set directions (1 = OUTSIDE for a window sitting at 0)
-                        dirA = 1 if trigger_source == 0 else 0
-                        dirB = 1 if trigger_source == 1 else 0
-                        t_status3 = ps2000.ps2000SetAdvTriggerChannelDirections(
-                            self.handle, dirA, dirB, 0, 0, 0
-                        )
-                        self.logger.debug(f"PicoScope: Trigger setup statuses - base:{t_status0}, props:{t_status1}, conds:{t_status2}, dirs:{t_status3}")
-                    else:
-                        self.logger.info("PicoScope: Configuring Auto Capture Mode (Advanced Dual-Edge Hardware Level Trigger)")
-                        # The basic trigger must still be configured, usually as a baseline, 
-                        # but we override the direction with Advanced Trigger.
-                        
-                        # Set standard trigger properties (delay=-30 for 30% pre-trigger, auto_trigger_ms=0 for strict wait)
-                        ps2000.ps2000_set_trigger(self.handle, trigger_source, self.trigger_threshold_adc, 0, -30, 0)
-                        
-                        # Override with Advanced Directions for dual-edge
-                        dirA = PS2000_ADV_RISING_OR_FALLING if trigger_source == 0 else PS2000_ADV_NONE
-                        dirB = PS2000_ADV_RISING_OR_FALLING if trigger_source == 1 else PS2000_ADV_NONE
-                        
-                        if hasattr(ps2000, "ps2000SetAdvTriggerChannelDirections"):
-                            ps2000.ps2000SetAdvTriggerChannelDirections(
-                                self.handle, dirA, dirB, PS2000_ADV_NONE, PS2000_ADV_NONE, PS2000_ADV_NONE
-                            )
-                else:
-                    self.logger.info("PicoScope: Configuring Manual Capture Mode (Immediate Auto-trigger)")
-                    # Disable hardware trigger (Auto-trigger immediately)
-                    # We cannot use a hardware trigger because the pulse can be negative or positive,
-                    # and PS2000 does not support dual-edge window triggers in basic API.
-                    ps2000.ps2000_set_trigger(self.handle, 5, 0, 0, 0, 0)
+                # Ensure trigger is configured for current hardware state
+                self.setup_advanced_trigger()
                 
                 time_indisposed_ms = c_int32(0)
                 status = ps2000.ps2000_run_block(
@@ -301,31 +297,9 @@ class PicoScopeDriver(BaseDriver):
                     1, 
                     byref(time_indisposed_ms)
                 )
-                
-                # Robust Fallback Mechanism: If advanced trigger fails, fallback to standard trigger
-                if status == 0:
-                    self.logger.warning("PicoScope: Advanced trigger run_block failed. Retrying with standard fallback trigger.")
-                    
-                    # Clear advanced trigger conditions to disable it
-                    if hasattr(ps2000, "ps2000SetAdvTriggerChannelConditions"):
-                        cond = PS2000_TRIGGER_CONDITIONS()
-                        ps2000.ps2000SetAdvTriggerChannelConditions(self.handle, ctypes.byref(cond), 0)
-                        
-                    # Configure standard rising-edge level trigger
-                    fallback_threshold = int(dynamic_adc_threshold) if 'dynamic_adc_threshold' in locals() else self.trigger_threshold_adc
-                    ps2000.ps2000_set_trigger(self.handle, trigger_source, fallback_threshold, 0, -30, 0)
-                    
-                    # Retry block capture
-                    status = ps2000.ps2000_run_block(
-                        self.handle, 
-                        self.no_of_values, 
-                        self.timebase, 
-                        1, 
-                        byref(time_indisposed_ms)
-                    )
 
                 if status == 0:
-                    self.logger.error("PicoScope: Failed to run block capture even with standard fallback trigger.")
+                    self.logger.error("PicoScope: ps2000_run_block failed.")
                     self.is_capturing = False
                     return False
                     
@@ -335,6 +309,7 @@ class PicoScopeDriver(BaseDriver):
                 self.logger.error(f"PicoScope: Error starting block capture: {e}")
                 self.is_capturing = False
                 return False
+        return False
         return False
 
     def stop_capture(self) -> bool:

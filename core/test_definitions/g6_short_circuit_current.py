@@ -21,20 +21,23 @@ class G6ShortCircuitCurrentTest(BaseTest):
         
         # Pre-Fusing Helper (Steps 7-13)
         def add_pre_fusing_sequence(b: TestBuilder):
-            # 7. Close load switch.
-            b.send_meter_command("close_load_switch")
-            # 8. Verify measured current is > 0.
-            b.measure_current(min_val=0.1, max_val=100.0)
-            # 9. Delay 5 seconds.
-            b.wait(5)
-            # 10. Open load switch.
-            b.send_meter_command("open_load_switch")
-            # 11. Verify measured current is = 0.
-            b.measure_current(min_val=0.0, max_val=0.05)
-            # 12. Delay 5 seconds.
-            b.wait(5)
-            # 13. Validate result.
-            b.custom_action("Validate Pre-fusing Result", lambda ctx, hw: ctx.logger.info("Pre-fusing validated."))
+            def prefusing_loop(pb, pi):
+                # 7. Close load switch.
+                pb.send_meter_command("close_load_switch")
+                # 8. Verify measured current is > 0.
+                pb.measure_current(min_val=0.1, max_val=100.0)
+                # 9. Delay 5 seconds.
+                pb.wait(5)
+                # 10. Open load switch.
+                pb.send_meter_command("open_load_switch")
+                # 11. Verify measured current is = 0.
+                pb.measure_current(min_val=0.0, max_val=0.05)
+                # 12. Delay 5 seconds.
+                pb.wait(5)
+                # 13. Validate result.
+                pb.custom_action(f"Validate Pre-fusing Result (Iter {pi+1})", lambda ctx, hw, idx=pi: ctx.logger.info(f"Pre-fusing iteration {idx+1} validated."))
+
+            b.loop(3, prefusing_loop)
 
         # --- First Short Circuit Current Carrying Capacity Test ---
         # 16. Prompt user to select meter category (U2 or U3)

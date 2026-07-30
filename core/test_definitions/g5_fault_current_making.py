@@ -29,21 +29,24 @@ class G5FaultCurrentMakingTest(BaseTest):
                 b.verify_plc_coil_status(PLCCoil.CONTACTOR_120A_STATUS, "120A Contactor")
 
             # --- Pre-fusing (Steps 7-13) ---
-            # 7. Close load switch.
-            b.send_meter_command("close_load_switch")
-            # 8. Verify measured current is > 0.
-            b.measure_current(min_val=0.1, max_val=100.0)
-            # 9. Delay 5 seconds.
-            b.wait(5)
-            # 10. Open load switch.
-            b.send_meter_command("open_load_switch")
-            # 11. Verify measured current is = 0.
-            b.measure_current(min_val=0.0, max_val=0.05)
-            # 12. Delay 5 seconds.
-            b.wait(5)
-            # 13. Validate result: If Pass, continue. If Fail, turn OFF outputs and abort test.
-            # Measure current already logs errors, we proceed for now.
-            b.custom_action("Validate Pre-fusing Result", lambda ctx, hw: ctx.logger.info("Pre-fusing validated."))
+            def prefusing_loop(pb, pi):
+                # 7. Close load switch.
+                pb.send_meter_command("close_load_switch")
+                # 8. Verify measured current is > 0.
+                pb.measure_current(min_val=0.1, max_val=100.0)
+                # 9. Delay 5 seconds.
+                pb.wait(5)
+                # 10. Open load switch.
+                pb.send_meter_command("open_load_switch")
+                # 11. Verify measured current is = 0.
+                pb.measure_current(min_val=0.0, max_val=0.05)
+                # 12. Delay 5 seconds.
+                pb.wait(5)
+                # 13. Validate result: If Pass, continue. If Fail, turn OFF outputs and abort test.
+                # Measure current already logs errors, we proceed for now.
+                pb.custom_action(f"Validate Pre-fusing Result (Iter {pi+1})", lambda ctx, hw, idx=pi: ctx.logger.info(f"Pre-fusing iteration {idx+1} validated."))
+
+            b.loop(3, prefusing_loop)
             
             # 14. Turn OFF Contactor & SCR for High Current test (Keep ACB ON).
             b.set_plc_coil(PLCCoil.SCR_COIL_ADDR, False)

@@ -224,7 +224,9 @@ class TestBuilder:
 
     def stop_power_sequence(self, contactor_coil: PLCCoil = PLCCoil.CONTACTOR_120A_LOAD_BANK_COIL_ADDR):
         self.set_plc_coil(PLCCoil.SCR_COIL_ADDR, False)
-        self.set_plc_coil(contactor_coil, False)
+        # Always turn off both contactors when stopping the power sequence to ensure safety
+        self.set_plc_coil(PLCCoil.CONTACTOR_120A_LOAD_BANK_COIL_ADDR, False)
+        self.set_plc_coil(PLCCoil.CONTACTOR_100mA_LOAD_BANK_COIL_ADDR, False)
         self.set_plc_coil(PLCCoil.ACB_COIL_ADDR, False)
         return self
 

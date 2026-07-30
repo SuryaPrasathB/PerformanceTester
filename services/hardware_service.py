@@ -266,7 +266,9 @@ class HardwareService(QObject):
         """
         is_g7 = False
         if hasattr(self, 'context') and self.context:
-            is_g7 = (getattr(self.context, "test_identifier", None) == "g7")
+            test_id = getattr(self.context, "test_identifier", None)
+            sub_test = self.context.get_runtime_value("active_sub_test", None)
+            is_g7 = (test_id == "g7" or sub_test == "g7")
 
         drv_v_pf = self.mfm_drv
         drv_i = self.mfm2_drv if (is_g7 and self.mfm2_drv) else self.mfm_drv
@@ -366,7 +368,9 @@ class HardwareService(QObject):
         """
         is_g7 = False
         if hasattr(self, 'context') and self.context:
-            is_g7 = (getattr(self.context, "test_identifier", None) == "g7")
+            test_id = getattr(self.context, "test_identifier", None)
+            sub_test = self.context.get_runtime_value("active_sub_test", None)
+            is_g7 = (test_id == "g7" or sub_test == "g7")
 
         drv_i = self.mfm2_drv if (is_g7 and self.mfm2_drv) else self.mfm_drv
         if not drv_i or not drv_i.is_connected:
