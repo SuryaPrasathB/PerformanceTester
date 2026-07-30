@@ -270,6 +270,7 @@ class TestPage(QWidget, Ui_TestPage):
         self.test_runner.on_status_update.connect(self.update_status_text)
         self.test_runner.on_step_animate.connect(self.smart_step_animate)
         self.test_runner.on_cycle_update.connect(self.update_cycle_progress)
+        self.test_runner.on_power_failure.connect(self.handle_power_failure)
         
         hw_service = self.test_runner.context.hardware_service
         if hw_service:
@@ -305,6 +306,17 @@ class TestPage(QWidget, Ui_TestPage):
             self.update_status_text("Test Status: Running...")
             if self.progress_anim.state() == QPropertyAnimation.State.Paused:
                 self.progress_anim.resume()
+
+    @Slot(str)
+    def handle_power_failure(self, message: str):
+        from PySide6.QtWidgets import QMessageBox
+        self.update_status_text("Test Status: Paused (Power Cut)")
+        self.btn_stop.setText("Resume")
+        QMessageBox.warning(
+            self,
+            "Power Cut Detected",
+            message
+        )
 
     @Slot()
     def cancel_test(self):

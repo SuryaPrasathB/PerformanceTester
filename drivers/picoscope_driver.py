@@ -68,6 +68,43 @@ if ps2000:
         # Advanced trigger might not be available in older DLLs
         pass
         
+    class PS2000_TRIGGER_CHANNEL_PROPERTIES(ctypes.Structure):
+        _fields_ = [
+            ("thresholdMajor", c_short),
+            ("thresholdMinor", c_short),
+            ("hysteresis", ctypes.c_ushort),
+            ("channel", c_short),
+            ("thresholdMode", c_short)
+        ]
+
+    class PS2000_TRIGGER_CONDITIONS(ctypes.Structure):
+        _fields_ = [
+            ("channelA", c_int32),
+            ("channelB", c_int32),
+            ("channelC", c_int32),
+            ("channelD", c_int32),
+            ("ext", c_int32),
+            ("pwq", c_int32)
+        ]
+
+    try:
+        ps2000.ps2000SetAdvTriggerChannelProperties.argtypes = [
+            c_short, 
+            ctypes.POINTER(PS2000_TRIGGER_CHANNEL_PROPERTIES), 
+            c_short, 
+            c_int32
+        ]
+        ps2000.ps2000SetAdvTriggerChannelProperties.restype = c_short
+        
+        ps2000.ps2000SetAdvTriggerChannelConditions.argtypes = [
+            c_short, 
+            ctypes.POINTER(PS2000_TRIGGER_CONDITIONS), 
+            c_short
+        ]
+        ps2000.ps2000SetAdvTriggerChannelConditions.restype = c_short
+    except AttributeError:
+        pass
+        
 # Advanced Trigger Direction Constants
 PS2000_ADV_NONE = 0
 PS2000_ADV_RISING = 2
@@ -95,6 +132,7 @@ class PicoScopeDriver(BaseDriver):
         self.fcmc_capture_delay_ms = config.get("fcmc_capture_delay_ms", 0)
         self.trigger_mode = config.get("trigger_mode", "manual")  # "auto" or "manual"
         self.trigger_threshold_adc = config.get("trigger_threshold_adc", 1000)
+        self.use_window_trigger = config.get("use_window_trigger", False)
         self.mock_mode = config.get("mock", False)
 
     def connect(self) -> bool:
@@ -181,24 +219,57 @@ class PicoScopeDriver(BaseDriver):
         if ps2000:
             try:
                 if self.trigger_mode == "auto":
-                    self.logger.info("PicoScope: Configuring Auto Capture Mode (Advanced Dual-Edge Hardware Trigger)")
-                    # The basic trigger must still be configured, usually as a baseline, 
-                    # but we override the direction with Advanced Trigger.
-                    # We trigger on Channel B if enabled, else Channel A.
-                    # source: 0=A, 1=B, 2=C, 3=D, 4=EXT, 5=NONE
                     trigger_source = 1 if self.enable_channel_b else 0
                     
-                    # Set standard trigger properties (delay=-30 for 30% pre-trigger, auto_trigger_ms=0 for strict wait)
-                    ps2000.ps2000_set_trigger(self.handle, trigger_source, self.trigger_threshold_adc, 0, -30, 0)
-                    
-                    # Override with Advanced Directions for dual-edge
-                    dirA = PS2000_ADV_RISING_OR_FALLING if trigger_source == 0 else PS2000_ADV_NONE
-                    dirB = PS2000_ADV_RISING_OR_FALLING if trigger_source == 1 else PS2000_ADV_NONE
-                    
-                    if hasattr(ps2000, "ps2000SetAdvTriggerChannelDirections"):
+                    if self.use_window_trigger and hasattr(ps2000, "ps2000SetAdvTriggerChannelProperties"):
+                        self.logger.info("PicoScope: Configuring Auto Capture Mode (Advanced Window Trigger)")
+                        
+                        # Use trigger_threshold_adc for both positive and negative bounds
+                        prop = PS2000_TRIGGER_CHANNEL_PROPERTIES()
+                        prop.thresholdMajor = self.trigger_threshold_adc
+                        prop.thresholdMinor = -self.trigger_threshold_adc
+                        prop.hysteresis = 256 # ~0.78% hysteresis
+                        prop.channel = trigger_source
+                        prop.thresholdMode = 1 # WINDOW
+                        
+                        # We must first disable the standard trigger to rely completely on the advanced trigger
+                        ps2000.ps2000_set_trigger(self.handle, 5, 0, 0, -30, 0)
+                        
+                        # Apply properties
+                        ps2000.ps2000SetAdvTriggerChannelProperties(self.handle, ctypes.byref(prop), 1, 0)
+                        
+                        # Apply conditions (Channel B = 1 (True))
+                        cond = PS2000_TRIGGER_CONDITIONS()
+                        cond.channelA = 1 if trigger_source == 0 else 0
+                        cond.channelB = 1 if trigger_source == 1 else 0
+                        cond.channelC = 0
+                        cond.channelD = 0
+                        cond.ext = 0
+                        cond.pwq = 0
+                        ps2000.ps2000SetAdvTriggerChannelConditions(self.handle, ctypes.byref(cond), 1)
+                        
+                        # Set directions (1 = OUTSIDE for a window sitting at 0)
+                        dirA = 1 if trigger_source == 0 else 0
+                        dirB = 1 if trigger_source == 1 else 0
                         ps2000.ps2000SetAdvTriggerChannelDirections(
-                            self.handle, dirA, dirB, PS2000_ADV_NONE, PS2000_ADV_NONE, PS2000_ADV_NONE
+                            self.handle, dirA, dirB, 0, 0, 0
                         )
+                    else:
+                        self.logger.info("PicoScope: Configuring Auto Capture Mode (Advanced Dual-Edge Hardware Level Trigger)")
+                        # The basic trigger must still be configured, usually as a baseline, 
+                        # but we override the direction with Advanced Trigger.
+                        
+                        # Set standard trigger properties (delay=-30 for 30% pre-trigger, auto_trigger_ms=0 for strict wait)
+                        ps2000.ps2000_set_trigger(self.handle, trigger_source, self.trigger_threshold_adc, 0, -30, 0)
+                        
+                        # Override with Advanced Directions for dual-edge
+                        dirA = PS2000_ADV_RISING_OR_FALLING if trigger_source == 0 else PS2000_ADV_NONE
+                        dirB = PS2000_ADV_RISING_OR_FALLING if trigger_source == 1 else PS2000_ADV_NONE
+                        
+                        if hasattr(ps2000, "ps2000SetAdvTriggerChannelDirections"):
+                            ps2000.ps2000SetAdvTriggerChannelDirections(
+                                self.handle, dirA, dirB, PS2000_ADV_NONE, PS2000_ADV_NONE, PS2000_ADV_NONE
+                            )
                 else:
                     self.logger.info("PicoScope: Configuring Manual Capture Mode (Immediate Auto-trigger)")
                     # Disable hardware trigger (Auto-trigger immediately)

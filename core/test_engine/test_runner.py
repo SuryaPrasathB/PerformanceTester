@@ -22,6 +22,7 @@ class TestRunner(QThread):
     on_progress_update = Signal(int)
     on_step_animate = Signal(int, int, int) # start, end, duration_ms
     on_cycle_update = Signal(int, int) # current_cycle, total_cycles
+    on_power_failure = Signal(str)
     
     def __init__(self, test_instance: BaseTest, context: TestContext):
         super().__init__()
@@ -167,6 +168,27 @@ class TestRunner(QThread):
                     if not is_safe:
                         self.logger.critical("Live Monitor reported unsafe conditions! Cancelling test.")
                         self.cancel() # Break the main test thread
+                        
+                # 1.5 PLC Heartbeat (Power Cut Detection)
+                hw = self.context.hardware_service
+                if hw and hw.plc_drv and getattr(hw.plc_drv, 'is_connected', False):
+                    try:
+                        # Read dummy register to check connection health
+                        hw.plc_drv.read_data(0, 1)
+                        if getattr(hw.plc_drv, '_last_error', False):
+                            fails = self.context.get_runtime_value("plc_heartbeat_fails", 0) + 1
+                            self.context.update_runtime_value("plc_heartbeat_fails", fails)
+                        else:
+                            self.context.update_runtime_value("plc_heartbeat_fails", 0)
+                            
+                        if self.context.get_runtime_value("plc_heartbeat_fails", 0) >= 3:
+                            if self.state_machine.get_state() == TestState.RUNNING:
+                                self.logger.critical("PLC Heartbeat failed! Power Cut Detected.")
+                                self.pause()
+                                self.on_power_failure.emit("Power Cut Detected - Testing paused, Resume after power recovery")
+                                self.context.update_runtime_value("plc_heartbeat_fails", 0)
+                    except Exception:
+                        pass
                 
                 # Poll MFM Telemetry and store in runtime_values
                 hw = self.context.hardware_service

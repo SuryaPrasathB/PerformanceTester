@@ -47,6 +47,7 @@
       "fcmc_capture_delay_ms": 0,
       "trigger_mode": "auto",
       "trigger_threshold_adc": 1000,
+      "use_window_trigger": true,
       "mock": true
     }
   ],

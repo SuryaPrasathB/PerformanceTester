@@ -493,8 +493,8 @@ class TestBuilder:
         self.add_step(f"Measure Current [{min_val}-{max_val}A]", action, device="MFM Meter")
         return self
         
-    def loop(self, count: int, loop_builder_func: Callable, redo_offset: int = 0):
-        """ Executes a nested sequence 'count' times. """
+    def loop(self, count: int, loop_builder_func: Callable, redo_offset: int = 0, start_index_key: str = None):
+        """ Executes a nested sequence from start_index up to count. """
         # Capture the sub-steps to display in the UI
         dummy_builder = TestBuilder()
         loop_builder_func(dummy_builder, 0)
@@ -504,9 +504,12 @@ class TestBuilder:
             min_duration = ctx.config.get("testing", {}).get("min_step_duration_s", 1.0)
             loop_id = id(action)
             ctx.push_loop(loop_id, count)
+            
+            start_index = int(ctx.get_runtime_value(start_index_key, 0)) if start_index_key else 0
+            
             try:
                 # Normal automated execution
-                for i in range(count):
+                for i in range(start_index, count):
                     ctx.update_status(f"Loop {i+1}/{count}")
                     ctx.set_loop_iteration(i)
                     sub_builder = TestBuilder()

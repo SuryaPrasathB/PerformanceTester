@@ -27,22 +27,49 @@ class G3ElectricalEnduranceTest(BaseTest):
     Verifies the contact durability over 8000 switching operations.
     """
     def build(self, builder: TestBuilder):
+        # 0. Check Resume State
+        def check_resume_state(ctx, hw):
+            state = ctx.database_service.get_active_test_state(ctx.meter_serial_number, "g3")
+            if state:
+                ans = ctx.prompt_user_action(f"Found interrupted G3 test at Cycle {state['current_cycle']} ({state['stage']}). Resume? (Yes/No)", True)
+                if str(ans).strip().lower() in ['yes', 'y', 'resume']:
+                    ctx.update_runtime_value("g3_resume_cycle", int(state['current_cycle']))
+                    ctx.update_runtime_value("g3_resume_stage", state['stage'])
+                    ctx.logger.info(f"Resuming G3 test from cycle {state['current_cycle']} ({state['stage']})")
+                else:
+                    ctx.database_service.clear_test_state(ctx.meter_serial_number, "g3")
+                    ctx.logger.info("Discarding old G3 test state.")
+            
+            # Setup dynamic start cycles
+            stage = ctx.get_runtime_value("g3_resume_stage", "UPF")
+            ctx.update_runtime_value("g3_upf_start_cycle", ctx.get_runtime_value("g3_resume_cycle", 0) if stage == "UPF" else 4000)
+            ctx.update_runtime_value("g3_05pf_start_cycle", ctx.get_runtime_value("g3_resume_cycle", 0) if stage == "0.5PF" else 0)
+            
+        builder.custom_action("Check Resume State", check_resume_state)
+
         builder.custom_action("Initialize Fault Counters", lambda ctx, hw: (
             ctx.update_runtime_value("total_weld_fault_cycles", 0),
             ctx.update_runtime_value("total_open_fault_cycles", 0)
         ))
         
-        # 1. Prompt User to Set Load to Vc Ic UPF
-        builder.stop_power_sequence(PLCCoil.CONTACTOR_120A_LOAD_BANK_COIL_ADDR)
-        builder.prompt_user("Set Load to Vc Ic UPF", requires_input=False)
+        # 1. Prompt User to Set Load to Vc Ic UPF (Skip if resuming at 0.5PF)
+        def should_run_upf(ctx, hw):
+            return ctx.get_runtime_value("g3_resume_stage", "UPF") == "UPF"
+            
+        builder.branch_on_condition(
+            "UPF Setup",
+            should_run_upf,
+            lambda b: (
+                b.stop_power_sequence(PLCCoil.CONTACTOR_120A_LOAD_BANK_COIL_ADDR),
+                b.prompt_user("Set Load to Vc Ic UPF", requires_input=False),
+                b.start_power_sequence(PLCCoil.CONTACTOR_120A_LOAD_BANK_COIL_ADDR),
+                b.prompt_user("Enter Initial Energy Value", requires_input=True, save_as="energy_initial")
+            ),
+            lambda b: b.custom_action("Skip UPF Setup", lambda ctx, hw: None)
+        )
         
-        # 2-3. Turn ON ACB -> Delay -> Turn ON Contactor
-        builder.start_power_sequence(PLCCoil.CONTACTOR_120A_LOAD_BANK_COIL_ADDR)
+        # 2-3. Turn ON ACB -> Delay -> Turn ON Contactor (Handled in branch)
         
-
-        
-        # 5. Prompt User to Enter Initial Energy Value
-        builder.prompt_user("Enter Initial Energy Value", requires_input=True, save_as="energy_initial")
         
         # 6. Prompt user to Enter Off Time Between 10-60 secs
         builder.prompt_user("Enter OFF Time between 10-60 secs (ON time defaults to 10s)", requires_input=True, save_as="off_delay")
@@ -125,6 +152,16 @@ class G3ElectricalEnduranceTest(BaseTest):
                         time.sleep(1)
                 b.custom_action("Wait OFF Time", dynamic_wait_off)
                 
+                # 7. Save State every 5 cycles
+                def save_state_action(ctx, hw):
+                    current_cycle = i + 1
+                    if current_cycle % 5 == 0 or current_cycle == 4000:
+                        stage_str = "UPF" if pf == 1.0 else "0.5PF"
+                        ctx.database_service.save_test_state(
+                            ctx.meter_serial_number, "g3", current_cycle, 4000, stage_str, "IN_PROGRESS"
+                        )
+                b.custom_action("Save State", save_state_action)
+                
             return cycle_logic
 
         def is_external(ctx, hw):
@@ -136,7 +173,7 @@ class G3ElectricalEnduranceTest(BaseTest):
             b.wait_for_external_cycles(4000, threshold_current=0.5)
 
         def build_internal_path_upf(b):
-            b.loop(4000, make_cycles(1.0))
+            b.loop(4000, make_cycles(1.0), start_index_key="g3_upf_start_cycle")
 
         # 4000 Cycles at UPF
         builder.branch_on_condition("UPF Cycles", is_external, build_external_path, build_internal_path_upf)
@@ -144,9 +181,10 @@ class G3ElectricalEnduranceTest(BaseTest):
         # 11. Prompt User to Change Load Vc Ic 0.5PF
         builder.stop_power_sequence(PLCCoil.CONTACTOR_120A_LOAD_BANK_COIL_ADDR)
         builder.prompt_user("Change Load to Vc 10A 0.5PF", requires_input=False)
+        builder.start_power_sequence(PLCCoil.CONTACTOR_120A_LOAD_BANK_COIL_ADDR)
         
         def build_internal_path_pf(b):
-            b.loop(4000, make_cycles(0.5))
+            b.loop(4000, make_cycles(0.5), start_index_key="g3_05pf_start_cycle")
 
         # 12-15. 4000 Cycles at 0.5 PF
         builder.branch_on_condition("0.5PF Cycles", is_external, build_external_path, build_internal_path_pf)
@@ -181,8 +219,18 @@ class G3ElectricalEnduranceTest(BaseTest):
         # 21. Prompt User to Enter Final Energy Value
         builder.prompt_user("Enter Final Energy Value", requires_input=True, save_as="energy_final")
         
+        def check_initial_energy(ctx, hw):
+            if "energy_initial" not in ctx.runtime_values:
+                ctx.logger.warning("energy_initial missing (likely due to test resumption). Prompting.")
+                val = ctx.prompt_user_action("Enter Initial Energy Value from start of test:", requires_input=True)
+                ctx.update_runtime_value("energy_initial", val)
+        builder.custom_action("Ensure Initial Energy", check_initial_energy)
+        
         # 22. Validate, Showcase and store results
         builder.custom_action("Verify Energy Difference & Store Results", self._verify_and_store)
+        
+        # Mark state as completed
+        builder.custom_action("Clear Saved State", lambda ctx, hw: ctx.database_service.clear_test_state(ctx.meter_serial_number, "g3"))
         
         # 23-24. Turn OFF ACB and Contactor
         builder.stop_power_sequence(PLCCoil.CONTACTOR_120A_LOAD_BANK_COIL_ADDR)

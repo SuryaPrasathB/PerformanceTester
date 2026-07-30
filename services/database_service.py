@@ -84,6 +84,22 @@ class DatabaseService:
         """
         cursor.execute(table_run_details)
 
+        # 5. Test Session State Table (for pausing/resuming long tests like G3)
+        table_session_state = """
+        CREATE TABLE IF NOT EXISTS test_session_state (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            serial_number VARCHAR(255) NOT NULL,
+            test_type VARCHAR(50) NOT NULL,
+            current_cycle INT DEFAULT 0,
+            max_cycles INT DEFAULT 0,
+            stage VARCHAR(100),
+            status VARCHAR(20) NOT NULL,
+            last_updated DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            UNIQUE KEY unique_session (serial_number, test_type)
+        )
+        """
+        cursor.execute(table_session_state)
+
         # 2. Test Suites Table
         table_suites = """
         CREATE TABLE IF NOT EXISTS test_suites (
@@ -287,6 +303,58 @@ class DatabaseService:
         details = cursor.fetchall()
         cursor.close()
         return details
+
+    def save_test_state(self, serial_number: str, test_type: str, current_cycle: int, max_cycles: int, stage: str, status: str):
+        """Saves or updates the live state of a long-running test."""
+        if not self.connection or not self.connection.is_connected():
+            self.connect()
+            
+        query = """
+            INSERT INTO test_session_state (serial_number, test_type, current_cycle, max_cycles, stage, status)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            ON DUPLICATE KEY UPDATE
+            current_cycle = VALUES(current_cycle),
+            max_cycles = VALUES(max_cycles),
+            stage = VALUES(stage),
+            status = VALUES(status)
+        """
+        cursor = self.connection.cursor()
+        try:
+            cursor.execute(query, (serial_number, test_type, current_cycle, max_cycles, stage, status))
+            self.connection.commit()
+        except Exception as e:
+            self.connection.rollback()
+            self.logger.error(f"Failed to save test state: {e}")
+        finally:
+            cursor.close()
+
+    def get_active_test_state(self, serial_number: str, test_type: str) -> Optional[dict]:
+        """Fetches the interrupted or active test state if available."""
+        if not self.connection or not self.connection.is_connected():
+            self.connect()
+            
+        query = "SELECT * FROM test_session_state WHERE serial_number = %s AND test_type = %s AND status = 'IN_PROGRESS'"
+        cursor = self.connection.cursor(dictionary=True)
+        cursor.execute(query, (serial_number, test_type))
+        state = cursor.fetchone()
+        cursor.close()
+        return state
+
+    def clear_test_state(self, serial_number: str, test_type: str):
+        """Marks a test state as COMPLETED so it won't be resumed."""
+        if not self.connection or not self.connection.is_connected():
+            self.connect()
+            
+        query = "UPDATE test_session_state SET status = 'COMPLETED' WHERE serial_number = %s AND test_type = %s"
+        cursor = self.connection.cursor()
+        try:
+            cursor.execute(query, (serial_number, test_type))
+            self.connection.commit()
+        except Exception as e:
+            self.connection.rollback()
+            self.logger.error(f"Failed to clear test state: {e}")
+        finally:
+            cursor.close()
 
     def get_all_test_results(self, filters: Optional[Dict[str, Any]] = None) -> list:
         """Fetches test results with optional filtering."""
