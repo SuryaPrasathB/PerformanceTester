@@ -97,6 +97,7 @@ class G5FaultCurrentMakingTest(BaseTest):
                 
                 pico = hw.picoscope
                 if pico:
+                    pico.enable_channel_a = True
                     pico.set_channel_ranges(10, range_idx)
                     
                     # Force hardware edge-trigger mode to ensure we don't miss the 

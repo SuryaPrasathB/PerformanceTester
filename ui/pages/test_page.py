@@ -453,6 +453,8 @@ class TestPage(QWidget, Ui_TestPage):
             
         calculated_pf_str = ""
         measured_curr_str = ""
+        measured_voltage_str = ""
+        pulse_duration_str = ""
         if self.test_runner and isinstance(self.test_runner.context.test_results, dict):
             test_id = getattr(self.test_runner.test, "test_identifier", "unknown").lower()
             if test_id != "g5":
@@ -463,6 +465,15 @@ class TestPage(QWidget, Ui_TestPage):
                 meas_curr = self.test_runner.context.test_results.get("measured_current")
                 if meas_curr is not None:
                     measured_curr_str = f"<br><span style='font-size: 16px; color: {text_color};'>Measured Current: <span style='font-weight: bold; color: #F59E0B;'>{meas_curr:.1f} A</span></span>"
+                    
+                meas_volt = self.test_runner.context.test_results.get("voltage_vrms")
+                if meas_volt is not None:
+                    measured_voltage_str = f"<br><span style='font-size: 16px; color: {text_color};'>Measured Voltage: <span style='font-weight: bold; color: #3B82F6;'>{meas_volt:.1f} V</span></span>"
+                    
+                pulse_dur = self.test_runner.context.test_results.get("pulse_duration")
+                if pulse_dur is not None:
+                    pulse_duration_str = f"<br><span style='font-size: 16px; color: {text_color};'>Duration: <span style='font-weight: bold; color: #8B5CF6;'>{pulse_dur:.1f} ms</span></span>"
+
                 
         failure_reason_str = ""
         if result != "PASS" and self.test_runner and getattr(self.test_runner, "failure_reason", None):
@@ -473,7 +484,7 @@ class TestPage(QWidget, Ui_TestPage):
         <div align='center' style='line-height: 140%;'>
             <span style='font-size: 14px; color: {sec_color}; font-weight: bold; letter-spacing: 1px;'>TEST SEQUENCE ENDED</span><br>
             <span style='font-size: 34px; color: {color}; font-weight: 800; letter-spacing: 0.5px;'>{result}</span><br>
-            <span style='font-size: 16px; color: {text_color};'>Meter Serial: <span style='font-weight: bold;'>{serial}</span></span>{calculated_pf_str}{measured_curr_str}{failure_reason_str}
+            <span style='font-size: 16px; color: {text_color};'>Meter Serial: <span style='font-weight: bold;'>{serial}</span></span>{calculated_pf_str}{measured_curr_str}{measured_voltage_str}{pulse_duration_str}{failure_reason_str}
         </div>
         """
         self.lbl_instruction.setText(html)
@@ -496,6 +507,13 @@ class TestPage(QWidget, Ui_TestPage):
         title_text = "USER INPUT REQUIRED" if requires_input else "ACTION REQUIRED"
         text_color = "#F8FAFC" if is_dark else "#0F172A"
         
+        import re
+        default_val = ""
+        match = re.search(r'\[default:\s*(.*?)\]', message, re.IGNORECASE)
+        if match:
+            default_val = match.group(1)
+            message = message.replace(match.group(0), "").strip()
+            
         # Replace python newlines with HTML breaks since this is rendered as rich text
         formatted_message = message.replace('\n', '<br>')
         
@@ -628,7 +646,10 @@ class TestPage(QWidget, Ui_TestPage):
                             card.set_review_mode(True)
             else:
                 self.input_instruction.show()
-                self.input_instruction.clear()
+                if default_val:
+                    self.input_instruction.setText(default_val)
+                else:
+                    self.input_instruction.clear()
                 self.input_instruction.setEnabled(True)
                 self.btn_done.show()
                 self.btn_done.setEnabled(True)
@@ -889,6 +910,18 @@ class TestPage(QWidget, Ui_TestPage):
                 if pm and not pm.isNull():
                     pm.save(file_path)
                 
+                # Also save the metrics to a JSON file alongside the PNG for PDF export
+                import json
+                metrics = {}
+                if card.voltage_vrms is not None: metrics["voltage_vrms"] = card.voltage_vrms
+                if card.measured_current is not None: metrics["measured_current"] = card.measured_current
+                if card.pulse_duration is not None: metrics["pulse_duration"] = card.pulse_duration
+                if card.calculated_pf is not None: metrics["calculated_pf"] = card.calculated_pf
+                
+                json_path = file_path.replace('.png', '.json')
+                with open(json_path, 'w') as f:
+                    json.dump(metrics, f)
+                
                 temp_graph.deleteLater()
                 
         # Check if card with this name already exists
@@ -928,6 +961,8 @@ class TestPage(QWidget, Ui_TestPage):
         test_id = data.get('test_id', 'unknown')
         pf = data.get('pf')
         curr = data.get('current')
+        volt = data.get('voltage')
+        dur = data.get('duration')
         pixmap = data.get('pixmap')
         card_name = data.get('name', '')
         
@@ -944,6 +979,10 @@ class TestPage(QWidget, Ui_TestPage):
                 results["pf_list"][idx] = pf
             if "measured_current_list" in results and idx < len(results["measured_current_list"]):
                 results["measured_current_list"][idx] = curr
+            if "voltage_vrms_list" in results and idx < len(results["voltage_vrms_list"]):
+                results["voltage_vrms_list"][idx] = volt
+            if "pulse_duration_list" in results and idx < len(results["pulse_duration_list"]):
+                results["pulse_duration_list"][idx] = dur
                 
         # Recalculate average if lists exist, otherwise just use the overridden value
         if "pf_list" in results and len(results["pf_list"]) > 0:
@@ -961,8 +1000,24 @@ class TestPage(QWidget, Ui_TestPage):
             results['measured_current'] = sum(active_currs) / len(active_currs)
         else:
             results['measured_current'] = curr
+            
+        if "voltage_vrms_list" in results and len(results["voltage_vrms_list"]) > 0:
+            active_volts = results["voltage_vrms_list"]
+            if test_id.lower() == "g6" and len(active_volts) > 3:
+                active_volts = active_volts[3:]
+            results['voltage_vrms'] = sum(active_volts) / len(active_volts)
+        elif volt is not None:
+            results['voltage_vrms'] = volt
+            
+        if "pulse_duration_list" in results and len(results["pulse_duration_list"]) > 0:
+            active_durs = results["pulse_duration_list"]
+            if test_id.lower() == "g6" and len(active_durs) > 3:
+                active_durs = active_durs[3:]
+            results['pulse_duration'] = sum(active_durs) / len(active_durs)
+        elif dur is not None:
+            results['pulse_duration'] = dur
         
-        # Save image
+        # Save image and metrics for PDF
         if pixmap:
             import os
             graphs_dir = "logs/graphs"
@@ -973,6 +1028,23 @@ class TestPage(QWidget, Ui_TestPage):
                 # Overwrite the automatically generated image with the overridden one
                 file_path = os.path.join(graphs_dir, f"session_{session_id}_{test_id}_{safe_name}.png")
                 pixmap.save(file_path)
+                
+                # Also update the JSON metrics for the PDF report
+                import json
+                json_path = file_path.replace('.png', '.json')
+                metrics = {}
+                if os.path.exists(json_path):
+                    with open(json_path, 'r') as f:
+                        metrics = json.load(f)
+                
+                if volt is not None: metrics["voltage_vrms"] = volt
+                if curr is not None: metrics["measured_current"] = curr
+                if dur is not None: metrics["pulse_duration"] = dur
+                if pf is not None: metrics["calculated_pf"] = pf
+                
+                with open(json_path, 'w') as f:
+                    json.dump(metrics, f)
+
                 
         # If the test is already complete, update the database
         from core.test_engine.state_machine import TestState

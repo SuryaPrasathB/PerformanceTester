@@ -99,6 +99,10 @@ class WaveformGraph(QWidget):
         ranges = [0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0]
         self.range_volts = ranges[range_val] if range_val < len(ranges) else 20.0
         
+        # Scale Channel A by 30x attenuation factor so it reflects true voltage (-15V to +15V scale)
+        if self.data_a:
+            self.data_a = [x * 30.0 for x in self.data_a]
+        
         # If the data represents high currents (e.g. from mock surge peaking at 4500A), 
         # let's set the voltage range dynamically to map properly on the Y-axis.
         max_val = max(abs(x) for x in data_a) if data_a else 0.0
@@ -123,8 +127,18 @@ class WaveformGraph(QWidget):
         total_time = (len(self.data_a) * self.interval_ms) if self.data_a else 100.0
         self.cursor1_t = 0.1 * total_time
         self.cursor2_t = 0.9 * total_time
-        self.cursor_y1_val = 0.0
-        self.cursor_y2_val = 0.0
+        
+        if self.data_a:
+            min_a, max_a = min(self.data_a), max(self.data_a)
+            self.cursor_y1_val = min_a if abs(min_a) > abs(max_a) else max_a
+        else:
+            self.cursor_y1_val = 0.0
+            
+        if self.data_b:
+            min_b, max_b = min(self.data_b), max(self.data_b)
+            self.cursor_y2_val = min_b if abs(min_b) > abs(max_b) else max_b
+        else:
+            self.cursor_y2_val = 0.0
 
     def get_override_duration(self) -> float:
         """Calculates duration (dt) from vertical cursors."""
@@ -143,6 +157,10 @@ class WaveformGraph(QWidget):
         """Calculates current from horizontal cursor using only C2 on the right axis."""
         return abs(self.cursor_y2_val * 600.0)
 
+    def get_override_voltage(self) -> float:
+        """Calculates voltage from horizontal cursor using Y1."""
+        return abs(self.cursor_y1_val)
+
     def setAutoZoomEnabled(self, enabled):
         """Enables or disables autozooming of transient events."""
         self.auto_zoom_enabled = enabled
@@ -158,6 +176,7 @@ class WaveformGraph(QWidget):
         self.view_start_time_ms = 0.0
         self.view_end_time_ms = (len(self.data_a) * self.interval_ms) if self.data_a else 100.0
         
+        # Ensure Channel A Y-Axis is kept at minimum -15V to +15V
         max_val = max(abs(x) for x in self.data_a) if self.data_a else 15.0
         limit = max(15.0, max_val * 1.1)
         self.view_min_volt = -limit
@@ -185,24 +204,25 @@ class WaveformGraph(QWidget):
             start_idx = max(0, int(t_start / self.interval_ms))
             end_idx = min(len(self.data_a) - 1 if self.data_a else 0, int(t_end / self.interval_ms))
             
-            # Using data_b for current or data_a for voltage
-            dataset = self.data_b if self.data_b else self.data_a
-            if dataset and start_idx <= end_idx:
-                subset = dataset[start_idx:end_idx+1]
-                if subset:
-                    min_v = min(subset)
-                    max_v = max(subset)
-                    if abs(min_v) > abs(max_v):
-                        self.cursor_y2_val = min_v
-                        self.cursor_y1_val = max_v
-                    else:
-                        self.cursor_y2_val = max_v
-                        self.cursor_y1_val = min_v
+            # Calculate y-values for the cursors based on their respective channels
+            if self.data_a and start_idx <= end_idx:
+                subset_a = self.data_a[start_idx:end_idx+1]
+                if subset_a:
+                    min_a, max_a = min(subset_a), max(subset_a)
+                    self.cursor_y1_val = min_a if abs(min_a) > abs(max_a) else max_a
                 else:
                     self.cursor_y1_val = 0.0
-                    self.cursor_y2_val = 0.0
             else:
                 self.cursor_y1_val = 0.0
+
+            if self.data_b and start_idx <= end_idx:
+                subset_b = self.data_b[start_idx:end_idx+1]
+                if subset_b:
+                    min_b, max_b = min(subset_b), max(subset_b)
+                    self.cursor_y2_val = min_b if abs(min_b) > abs(max_b) else max_b
+                else:
+                    self.cursor_y2_val = 0.0
+            else:
                 self.cursor_y2_val = 0.0
                 
             self._auto_position_cursors = True
@@ -293,8 +313,8 @@ class WaveformGraph(QWidget):
         t_end = event_ends[-1] * self.interval_ms
         duration = t_end - t_start
         
-        # Tight padding to show just the event and a tiny bit of context
-        padding = max(duration * 0.1, 2.0)  
+        # Increase padding to show more context before and after the event (e.g. 1 full cycle minimum)
+        padding = max(duration * 1.0, 20.0)  
         zoom_start = max(0.0, t_start - padding)
         zoom_end = min(n * self.interval_ms, t_end + padding)
         
@@ -316,6 +336,7 @@ class WaveformGraph(QWidget):
             self.view_end_time_ms = total_t
             self.view_start_time_ms = self.view_end_time_ms - duration
             
+        # Ensure Channel A Y-Axis is kept at minimum -15V to +15V
         max_val = max(abs(x) for x in self.data_a) if self.data_a else 15.0
         limit = max(15.0, max_val * 1.25)
         
@@ -378,10 +399,16 @@ class WaveformGraph(QWidget):
         if c_span > 0:
             y2_pct = (self.cursor_y2_val - self.view_min_curr) / c_span
             self.cursor_y2 = self.pad_top + graph_h - (y2_pct * graph_h)
+            
+        v_span = self.view_max_volt - self.view_min_volt
+        if v_span > 0:
+            y1_pct = (self.cursor_y1_val - self.view_min_volt) / v_span
+            self.cursor_y1 = self.pad_top + graph_h - (y1_pct * graph_h)
 
         # Clamp cursors for drawing so they don't spill out of graph area
         self.cursor_1x = max(self.pad_left, min(self.pad_left + graph_w, self.cursor_1x))
         self.cursor_2x = max(self.pad_left, min(self.pad_left + graph_w, self.cursor_2x))
+        self.cursor_y1 = max(self.pad_top, min(self.pad_top + graph_h, self.cursor_y1))
         self.cursor_y2 = max(self.pad_top, min(self.pad_top + graph_h, self.cursor_y2))
             
         # Clip painting to graph active area
@@ -422,26 +449,32 @@ class WaveformGraph(QWidget):
             painter.drawRect(rx, ry, rw, rh)
             
         # 6. Draw Interactive Cursors
-        # Cursor vertical C1 (Blue)
-        pen_c1 = QPen(QColor("#2563EB"), 1.5, Qt.DashLine)
+        # Cursor vertical C1 (Black)
+        pen_c1 = QPen(QColor("#000000"), 1.5, Qt.DashLine)
         painter.setPen(pen_c1)
         painter.drawLine(self.cursor_1x, self.pad_top, self.cursor_1x, self.pad_top + graph_h)
-        painter.setPen(QPen(QColor("#2563EB"), 1))
-        painter.setBrush(QBrush(QColor("#2563EB")))
+        painter.setPen(QPen(QColor("#000000"), 1))
+        painter.setBrush(QBrush(QColor("#000000")))
         painter.drawPolygon([QPoint(self.cursor_1x - 6, self.pad_top), QPoint(self.cursor_1x + 6, self.pad_top), QPoint(self.cursor_1x, self.pad_top + 10)])
         
-        # Cursor vertical C2 (Blue)
+        # Cursor vertical C2 (Black)
         painter.setPen(pen_c1)
         painter.drawLine(self.cursor_2x, self.pad_top, self.cursor_2x, self.pad_top + graph_h)
-        painter.setPen(QPen(QColor("#2563EB"), 1))
-        painter.setBrush(QBrush(QColor("#2563EB")))
+        painter.setPen(QPen(QColor("#000000"), 1))
+        painter.setBrush(QBrush(QColor("#000000")))
         painter.drawPolygon([QPoint(self.cursor_2x - 6, self.pad_top + graph_h), QPoint(self.cursor_2x + 6, self.pad_top + graph_h), QPoint(self.cursor_2x, self.pad_top + graph_h - 10)])
         
-        # Cursor horizontal Y1 (Removed for simpler UI)
+        # Cursor horizontal Y1 (Blue)
+        pen_y1_blue = QPen(QColor("#2563EB"), 1.5, Qt.DashLine)
+        painter.setPen(pen_y1_blue)
+        painter.drawLine(self.pad_left, self.cursor_y1, self.pad_left + graph_w, self.cursor_y1)
+        painter.setPen(QPen(QColor("#2563EB"), 1))
+        painter.setBrush(QBrush(QColor("#2563EB")))
+        painter.drawPolygon([QPoint(self.pad_left, self.cursor_y1 - 6), QPoint(self.pad_left, self.cursor_y1 + 6), QPoint(self.pad_left + 10, self.cursor_y1)])
         
         # Cursor horizontal Y2 (Red)
-        pen_y1 = QPen(QColor("#DC2626"), 1.5, Qt.DashLine)
-        painter.setPen(pen_y1)
+        pen_y2_red = QPen(QColor("#DC2626"), 1.5, Qt.DashLine)
+        painter.setPen(pen_y2_red)
         painter.drawLine(self.pad_left, self.cursor_y2, self.pad_left + graph_w, self.cursor_y2)
         painter.setPen(QPen(QColor("#DC2626"), 1))
         painter.setBrush(QBrush(QColor("#DC2626")))
@@ -557,11 +590,11 @@ class WaveformGraph(QWidget):
         painter.drawLine(x + 9, y + 7, x + 9, y + 11)
 
     def draw_pf_badge(self, painter):
-        """Draws a premium styled floating badge/overlay displaying the calculated Power Factor & Measured Current."""
+        """Draws a premium styled floating badge/overlay displaying the calculated Power Factor, Voltage & Measured Current."""
         badge_x = self.pad_left + 15
         badge_y = self.pad_top + 15
-        badge_w = 210
-        badge_h = 68 if self.measured_current is not None else 52
+        badge_w = 260
+        badge_h = 100
         
         painter.save()
         # Draw translucent dark background card with subtle blue border
@@ -569,34 +602,45 @@ class WaveformGraph(QWidget):
         painter.setBrush(QBrush(QColor(15, 23, 42, 220))) # 85% opacity Slate 900
         painter.drawRoundedRect(badge_x, badge_y, badge_w, badge_h, 6, 6)
         
+        # Row 1: PF & Duration
         if self.calculated_pf is not None:
-            # Draw PF label
             painter.setFont(QFont("Segoe UI", 8, QFont.Bold))
             painter.setPen(QPen(QColor("#94A3B8")))
             painter.drawText(QRect(badge_x + 10, badge_y + 4, 100, 16), Qt.AlignLeft | Qt.AlignVCenter, "CALCULATED PF")
             
-            # Draw PF value
             painter.setFont(QFont("Segoe UI", 13, QFont.Bold))
             painter.setPen(QPen(QColor("#38BDF8")))
             pf_text = f"{self.calculated_pf:.3f}"
             painter.drawText(QRect(badge_x + 10, badge_y + 20, 80, 20), Qt.AlignLeft | Qt.AlignVCenter, pf_text)
             
-            # Draw Pulse Duration text
             painter.setFont(QFont("Segoe UI", 8, QFont.Bold))
             painter.setPen(QPen(QColor("#10B981"))) # Emerald Green
             dur_text = f"({self.pulse_duration:.2f} ms)" if self.pulse_duration else ""
-            painter.drawText(QRect(badge_x + 95, badge_y + 20, 105, 20), Qt.AlignRight | Qt.AlignVCenter, dur_text)
+            painter.drawText(QRect(badge_x + 110, badge_y + 20, 130, 20), Qt.AlignRight | Qt.AlignVCenter, dur_text)
 
+        # Row 2: Channel A (Voltage)
+        v_y = badge_y + 45
+        painter.setFont(QFont("Segoe UI", 8, QFont.Bold))
+        painter.setPen(QPen(QColor("#94A3B8")))
+        painter.drawText(QRect(badge_x + 10, v_y, 110, 16), Qt.AlignLeft | Qt.AlignVCenter, "CH A (VOLTAGE)")
+        
+        painter.setFont(QFont("Segoe UI", 11, QFont.Bold))
+        painter.setPen(QPen(QColor("#3B82F6"))) # Blue
+        volt_val = self.get_override_voltage()
+        volt_text = f"{volt_val:.1f} V"
+        painter.drawText(QRect(badge_x + 120, v_y, 120, 16), Qt.AlignRight | Qt.AlignVCenter, volt_text)
+
+        # Row 3: Channel B (Current)
         if self.measured_current is not None:
-            curr_y = badge_y + 42 if self.calculated_pf is not None else badge_y + 6
+            c_y = badge_y + 70
             painter.setFont(QFont("Segoe UI", 8, QFont.Bold))
             painter.setPen(QPen(QColor("#94A3B8")))
-            painter.drawText(QRect(badge_x + 10, curr_y, 110, 16), Qt.AlignLeft | Qt.AlignVCenter, "MEASURED CURRENT")
+            painter.drawText(QRect(badge_x + 10, c_y, 110, 16), Qt.AlignLeft | Qt.AlignVCenter, "CH B (CURRENT)")
             
             painter.setFont(QFont("Segoe UI", 11, QFont.Bold))
-            painter.setPen(QPen(QColor("#F59E0B"))) # Amber
+            painter.setPen(QPen(QColor("#EF4444"))) # Red
             curr_text = f"{self.measured_current:.1f} A"
-            painter.drawText(QRect(badge_x + 120, curr_y, 80, 16), Qt.AlignRight | Qt.AlignVCenter, curr_text)
+            painter.drawText(QRect(badge_x + 120, c_y, 120, 16), Qt.AlignRight | Qt.AlignVCenter, curr_text)
         
         painter.restore()
 
@@ -988,7 +1032,10 @@ class WaveformGraph(QWidget):
             self.cursors_moved.emit()
             self.update()
         elif self.dragging_cursor == 3:
-            pass
+            v_span = self.view_max_volt - self.view_min_volt
+            self.cursor_y1_val = self.view_max_volt - ((cy - self.pad_top) / graph_h) * v_span
+            self.cursors_moved.emit()
+            self.update()
         elif self.dragging_cursor == 4:
             c_span = self.view_max_curr - self.view_min_curr
             self.cursor_y2_val = self.view_max_curr - ((cy - self.pad_top) / graph_h) * c_span

@@ -89,3 +89,12 @@ def calculate_measured_current(peak_voltage: float) -> float:
     """
     return (peak_voltage / 2.0) * 1200.0
 
+def calculate_voltage_vrms(channel_a_data: list) -> float:
+    """
+    Calculates Voltage (Vrms) from Channel A waveform data.
+    Formula: Peak of Channel A * 30.0
+    """
+    if not channel_a_data:
+        return 0.0
+    peak_a = max(abs(x) for x in channel_a_data)
+    return peak_a * 30.0

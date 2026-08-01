@@ -14,9 +14,9 @@ class G2NormalOperationTest(BaseTest):
         self.description = "Verify basic operation and energy counting"
 
     def build(self, builder: TestBuilder):
-        # 1. Prompt User to Set Load to 240V Ic UPF
+        # 1. Prompt User to Set Load to 240V Ic UPF (Standard) - Vc Ic UPF (LSCS)
         builder.stop_power_sequence(PLCCoil.CONTACTOR_120A_LOAD_BANK_COIL_ADDR)
-        builder.prompt_user("Set Load to 240V Ic UPF", requires_input=False)
+        builder.prompt_user("Set Load to Vc Ic UPF", requires_input=False)
         
         # 2-4. Turn ON ACB -> Delay -> Turn ON Contactor
         builder.start_power_sequence(PLCCoil.CONTACTOR_120A_LOAD_BANK_COIL_ADDR)

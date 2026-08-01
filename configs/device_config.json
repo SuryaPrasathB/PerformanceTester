@@ -3,9 +3,9 @@
     {
       "name": "PLC1",
       "type": "modbus",
-      "ip": "192.168.0.109",
+      "ip": "127.0.0.1",
       "port": "502",
-      "mock": false
+      "mock": true
     },
     {
       "name": "EnergyMeter1",
@@ -42,7 +42,6 @@
       "port": "USB",
       "no_of_values": 3052,
       "timebase": 14,
-      "enable_channel_a": false,
       "capture_delay_ms": 0,
       "fcmc_capture_delay_ms": 0,
       "trigger_mode": "auto",
@@ -68,6 +67,12 @@
   "testing": {
     "min_step_duration_s": 1.0,
     "acb_operated_delay_s": 5.0,
-    "energy_diff_threshold_percent": 1.0
+    "energy_diff_threshold_percent": 1.0,
+    "report_fields": {
+      "voltage_vrms": true,
+      "current_apk": true,
+      "duration_ms": true,
+      "pf": true
+    }
   }
 }

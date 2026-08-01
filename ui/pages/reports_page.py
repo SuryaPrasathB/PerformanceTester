@@ -672,22 +672,83 @@ class ReportsPage(QWidget):
         # Append waveform graphs
         import os
         graphs_dir = "logs/graphs"
+        graph_count = 0
         if os.path.exists(graphs_dir):
             for file in os.listdir(graphs_dir):
                 if file.startswith(f"session_{session_id}_") and file.endswith(".png"):
                     img_path = os.path.abspath(os.path.join(graphs_dir, file)).replace('\\', '/')
                     test_name = file.replace(f"session_{session_id}_", "").replace(".png", "").replace("_", " ").title()
                     
+                    page_break = '<div style="page-break-before: always;"></div>' if graph_count % 2 == 0 else '<div style="margin-top: 40px;"></div>'
+                    
                     html += f"""
-                    <div style="page-break-before: always;"></div>
+                    {page_break}
                     <div class="section-title">{test_name} Captured Waveform</div>
                     <table width="100%" cellpadding="0" cellspacing="0" style="margin-top: 5px; margin-bottom: 10px;">
                         <tr><td height="1" bgcolor="#E2E8F0" style="font-size: 1px; line-height: 1px;">&nbsp;</td></tr>
                     </table>
-                    <div style="text-align: center; margin-top: 20px;">
-                        <img src="{img_path}" width="700" />
+                    <div style="text-align: center; margin-top: 15px;">
+                        <img src="{img_path}" width="550" />
                     </div>
                     """
+                    
+                    graph_count += 1
+                    
+                    # Look for accompanying JSON metrics file
+                    json_path = img_path.replace('.png', '.json')
+                    if os.path.exists(json_path):
+                        import json
+                        try:
+                            # Load report fields config
+                            config_path = os.path.join(os.path.dirname(__file__), "..", "..", "configs", "device_config.json")
+                            report_fields = {}
+                            if os.path.exists(config_path):
+                                with open(config_path, 'r') as cf:
+                                    dev_cfg = json.load(cf)
+                                    report_fields = dev_cfg.get("testing", {}).get("report_fields", {})
+                            
+                            # Fallbacks if config missing
+                            show_vrms = report_fields.get("voltage_vrms", True)
+                            show_curr = report_fields.get("current_apk", True)
+                            show_dur = report_fields.get("duration_ms", True)
+                            show_pf = report_fields.get("pf", True)
+                                    
+                            with open(json_path, 'r') as f:
+                                metrics = json.load(f)
+                            
+                            if metrics:
+                                html += """
+                                <table class="meta-table" style="margin-top: 15px; width: 60%; margin-left: auto; margin-right: auto; text-align: center;">
+                                    <tr>
+                                """
+                                if show_vrms and "voltage_vrms" in metrics:
+                                    html += '<td class="meta-header">Voltage (Vrms)</td>'
+                                if show_curr and "measured_current" in metrics:
+                                    html += '<td class="meta-header">Current</td>'
+                                if show_dur and "pulse_duration" in metrics:
+                                    html += '<td class="meta-header">Duration (ms)</td>'
+                                if show_pf and "calculated_pf" in metrics:
+                                    html += '<td class="meta-header">Power Factor</td>'
+                                
+                                html += "</tr><tr>"
+                                
+                                if show_vrms and "voltage_vrms" in metrics:
+                                    html += f'<td>{metrics["voltage_vrms"]:.1f} V</td>'
+                                if show_curr and "measured_current" in metrics:
+                                    curr = metrics["measured_current"]
+                                    c_str = f"{curr/1000.0:.3f} kA" if curr >= 1000 else f"{curr:.1f} A"
+                                    html += f'<td>{c_str}</td>'
+                                if show_dur and "pulse_duration" in metrics:
+                                    html += f'<td>{metrics["pulse_duration"]:.2f}</td>'
+                                if show_pf and "calculated_pf" in metrics:
+                                    html += f'<td>{metrics["calculated_pf"]:.2f}</td>'
+                                    
+                                html += """
+                                    </tr>
+                                </table>
+                                """
+                        except Exception as e:
+                            print(f"Error loading metrics for PDF: {e}")
                     
         html += """
         </body>

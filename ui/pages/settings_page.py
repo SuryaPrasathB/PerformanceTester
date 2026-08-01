@@ -173,9 +173,44 @@ class SettingsPage(QWidget, Ui_SettingsPage):
         self.btn_save_hw.clicked.connect(self._save_hw_config)
         self.hw_config_layout.addWidget(self.btn_save_hw)
         
-        # Insert it before the bottom spacer in the existing layout
+        # Insert Report Config Box
+        self.report_config_box = QGroupBox("Report Fields Configuration")
+        self.report_config_layout = QVBoxLayout(self.report_config_box)
+        self.report_config_layout.setSpacing(10)
+        
+        report_fields = config.get("testing", {}).get("report_fields", {
+            "voltage_vrms": True,
+            "current_apk": True,
+            "duration_ms": True,
+            "pf": True
+        })
+        
+        self.chk_voltage = QCheckBox("Voltage (Vrms)")
+        self.chk_voltage.setChecked(report_fields.get("voltage_vrms", True))
+        self.chk_current = QCheckBox("Current (Apk)")
+        self.chk_current.setChecked(report_fields.get("current_apk", True))
+        self.chk_duration = QCheckBox("Duration (ms)")
+        self.chk_duration.setChecked(report_fields.get("duration_ms", True))
+        self.chk_pf = QCheckBox("Power Factor (PF)")
+        self.chk_pf.setChecked(report_fields.get("pf", True))
+        
+        report_row1 = QHBoxLayout()
+        report_row1.addWidget(self.chk_voltage)
+        report_row1.addWidget(self.chk_current)
+        report_row1.addStretch()
+        
+        report_row2 = QHBoxLayout()
+        report_row2.addWidget(self.chk_duration)
+        report_row2.addWidget(self.chk_pf)
+        report_row2.addStretch()
+        
+        self.report_config_layout.addLayout(report_row1)
+        self.report_config_layout.addLayout(report_row2)
+        
+        # Insert them before the bottom spacer in the existing layout
         count = self.verticalLayout_settings.count()
         self.verticalLayout_settings.insertWidget(count - 1, self.hw_config_box)
+        self.verticalLayout_settings.insertWidget(count - 1, self.report_config_box)
 
     @Slot(str, object)
     def _validate_device(self, device_name, btn):
@@ -231,31 +266,67 @@ class SettingsPage(QWidget, Ui_SettingsPage):
     def _save_hw_config(self):
         config_service = self.device_manager.config_service
         config = config_service.get_config()
-        original_devices = {d.get('name'): d for d in config.get("devices", [])}
+        
+        forms_data = {name: (dtype, inputs) for name, dtype, inputs in self.device_forms}
         
         new_devices = []
-        for name, dtype, inputs in self.device_forms:
-            dev = original_devices.get(name, {}).copy()
-            dev["name"] = name
-            dev["type"] = dtype
-            for key, widget in inputs.items():
-                if isinstance(widget, QCheckBox):
-                    dev[key] = widget.isChecked()
-                elif isinstance(widget, QComboBox):
-                    dev[key] = widget.currentText()
-                else:
-                    val = widget.text()
-                    # Try to infer type
-                    try:
-                        dev[key] = int(val)
-                    except ValueError:
+        for d in config.get("devices", []):
+            name = d.get("name")
+            if name in forms_data:
+                dtype, inputs = forms_data[name]
+                dev = d.copy()
+                dev["name"] = name
+                dev["type"] = dtype
+                for key, widget in inputs.items():
+                    if isinstance(widget, QCheckBox):
+                        dev[key] = widget.isChecked()
+                    elif isinstance(widget, QComboBox):
+                        dev[key] = widget.currentText()
+                    else:
+                        val = widget.text()
                         try:
-                            dev[key] = float(val)
+                            dev[key] = int(val)
                         except ValueError:
-                            dev[key] = val
-            new_devices.append(dev)
+                            try:
+                                dev[key] = float(val)
+                            except ValueError:
+                                dev[key] = val
+                new_devices.append(dev)
+            else:
+                new_devices.append(d.copy() if isinstance(d, dict) else d)
+                
+        existing_names = {d.get("name") for d in config.get("devices", []) if isinstance(d, dict)}
+        for name, dtype, inputs in self.device_forms:
+            if name not in existing_names:
+                dev = {"name": name, "type": dtype}
+                for key, widget in inputs.items():
+                    if isinstance(widget, QCheckBox):
+                        dev[key] = widget.isChecked()
+                    elif isinstance(widget, QComboBox):
+                        dev[key] = widget.currentText()
+                    else:
+                        val = widget.text()
+                        try:
+                            dev[key] = int(val)
+                        except ValueError:
+                            try:
+                                dev[key] = float(val)
+                            except ValueError:
+                                dev[key] = val
+                new_devices.append(dev)
             
         config["devices"] = new_devices
+        
+        # Save Report fields configuration
+        if "testing" not in config:
+            config["testing"] = {}
+        if "report_fields" not in config["testing"]:
+            config["testing"]["report_fields"] = {}
+            
+        config["testing"]["report_fields"]["voltage_vrms"] = self.chk_voltage.isChecked()
+        config["testing"]["report_fields"]["current_apk"] = self.chk_current.isChecked()
+        config["testing"]["report_fields"]["duration_ms"] = self.chk_duration.isChecked()
+        config["testing"]["report_fields"]["pf"] = self.chk_pf.isChecked()
         
         try:
             import json

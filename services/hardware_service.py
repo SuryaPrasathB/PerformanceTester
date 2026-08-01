@@ -159,7 +159,7 @@ class HardwareService(QObject):
                 if isinstance(data, list) and len(data) == 2 and isinstance(data[0], list):
                     if test_id != "g5":
                         try:
-                            from core.waveform_analyzer import calculate_pulse_duration, calculate_pf_from_duration, calculate_peak_voltage, calculate_measured_current
+                            from core.waveform_analyzer import calculate_pulse_duration, calculate_pf_from_duration, calculate_peak_voltage, calculate_measured_current, calculate_voltage_vrms
                             duration_ms = calculate_pulse_duration(data[1], timebase)
                             if duration_ms > 0.0:
                                 pf = calculate_pf_from_duration(duration_ms)
@@ -185,10 +185,12 @@ class HardwareService(QObject):
                             # Calculate peak voltage and measured current
                             peak_v = calculate_peak_voltage(data[1])
                             meas_i = calculate_measured_current(peak_v)
-                            self.logger.info(f"Hardware Service: Measured Peak Current from waveform: {meas_i:.1f} A (Peak V: {peak_v:.3f} V)")
+                            vrms = calculate_voltage_vrms(data[0])
+                            self.logger.info(f"Hardware Service: Measured Peak Current from waveform: {meas_i:.1f} A (Peak V: {peak_v:.3f} V), Vrms: {vrms:.2f} V")
                             if hasattr(self, 'context') and self.context:
                                 self.context.update_runtime_value("measured_current", meas_i)
                                 self.context.update_runtime_value("peak_voltage", peak_v)
+                                self.context.update_runtime_value("voltage_vrms", vrms)
                                 if not isinstance(self.context.test_results, dict):
                                     self.context.test_results = {}
                                 

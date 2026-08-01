@@ -208,8 +208,15 @@ class PicoScopeDriver(BaseDriver):
             5: 0.5, 6: 1.0, 7: 2.0, 8: 5.0, 9: 10.0, 10: 20.0
         }
         active_range_v = RANGE_MAP.get(active_range_idx, 20.0)
-        target_threshold_v = 0.5
-        dynamic_adc_threshold = int((target_threshold_v / active_range_v) * 32512)
+        
+        # Use dynamic ADC threshold if already configured, otherwise fallback to 0.5V equivalent
+        if hasattr(self, 'trigger_threshold_adc') and self.trigger_threshold_adc != 1000:
+            dynamic_adc_threshold = self.trigger_threshold_adc
+            target_threshold_v = (dynamic_adc_threshold / 32512.0) * active_range_v
+        else:
+            target_threshold_v = 0.5
+            dynamic_adc_threshold = int((target_threshold_v / active_range_v) * 32512)
+            
         pre_trig_delay = -abs(self.pre_trigger_percent)
 
         cache_key = (trigger_source, active_range_idx, dynamic_adc_threshold, pre_trig_delay)
@@ -286,8 +293,11 @@ class PicoScopeDriver(BaseDriver):
             
         if ps2000:
             try:
+                # Stop the scope before configuring or starting a new block to ensure it's not busy
+                ps2000.ps2000_stop(self.handle)
+                
                 # Ensure trigger is configured for current hardware state
-                self.setup_advanced_trigger()
+                self.setup_advanced_trigger(force=True)
                 
                 time_indisposed_ms = c_int32(0)
                 status = ps2000.ps2000_run_block(

@@ -1,4 +1,4 @@
-from typing import List, Callable, Any
+from typing import List, Callable, Any, Union
 from core.test_engine.test_step import TestStep
 from core.hardware_mapping import PLCCoil, MFMRegister
 import time
@@ -497,7 +497,7 @@ class TestBuilder:
         self.add_step(f"Measure Current [{min_val}-{max_val}A]", action, device="MFM Meter")
         return self
         
-    def loop(self, count: int, loop_builder_func: Callable, redo_offset: int = 0, start_index_key: str = None):
+    def loop(self, count: Union[int, Callable, str], loop_builder_func: Callable, redo_offset: int = 0, start_index_key: str = None, review: bool = True):
         """ Executes a nested sequence from start_index up to count. """
         # Capture the sub-steps to display in the UI
         dummy_builder = TestBuilder()
@@ -506,15 +506,23 @@ class TestBuilder:
         
         def action(ctx, hw):
             min_duration = ctx.config.get("testing", {}).get("min_step_duration_s", 1.0)
+            
+            if callable(count):
+                actual_count = int(count(ctx))
+            elif isinstance(count, str):
+                actual_count = int(ctx.get_runtime_value(count, 0))
+            else:
+                actual_count = int(count)
+
             loop_id = id(action)
-            ctx.push_loop(loop_id, count)
+            ctx.push_loop(loop_id, actual_count)
             
             start_index = int(ctx.get_runtime_value(start_index_key, 0)) if start_index_key else 0
             
             try:
                 # Normal automated execution
-                for i in range(start_index, count):
-                    ctx.update_status(f"Loop {i+1}/{count}")
+                for i in range(start_index, actual_count):
+                    ctx.update_status(f"Loop {i+1}/{actual_count}")
                     ctx.set_loop_iteration(i)
                     sub_builder = TestBuilder()
                     loop_builder_func(sub_builder, i)
@@ -522,28 +530,29 @@ class TestBuilder:
                         self._execute_step(ctx, step, hw, min_duration)
                 
                 # Review phase
-                while True:
-                    ctx.update_status("Loop Complete. Waiting for Review.")
-                    res = ctx.prompt_user_action("Review cycles. Click 'Continue' to proceed, or click 'Redo' on a graph.", True)
-                    
-                    if not res or res == "Continue" or res.lower() == "yes" or res.lower() == "y":
-                        break
-                    
-                    if isinstance(res, str) and res.startswith("REDO:"):
-                        try:
-                            # 1-indexed from UI, minus the redo_offset
-                            cycle_to_redo = int(res.split(":")[1]) - 1 - redo_offset
-                            if 0 <= cycle_to_redo < count:
-                                ctx.update_status(f"Redoing Loop {cycle_to_redo+1}/{count}")
-                                ctx.set_loop_iteration(cycle_to_redo)
-                                sub_builder = TestBuilder()
-                                loop_builder_func(sub_builder, cycle_to_redo)
-                                for step in sub_builder._steps:
-                                    self._execute_step(ctx, step, hw, min_duration)
-                            else:
-                                ctx.logger.warning(f"Invalid cycle to redo: {cycle_to_redo+1+redo_offset}")
-                        except ValueError:
-                            ctx.logger.warning(f"Failed to parse REDO command: {res}")
+                if review:
+                    while True:
+                        ctx.update_status("Loop Complete. Waiting for Review.")
+                        res = ctx.prompt_user_action("Review cycles. Click 'Continue' to proceed, or click 'Redo' on a graph.", True)
+                        
+                        if not res or res == "Continue" or res.lower() == "yes" or res.lower() == "y":
+                            break
+                        
+                        if isinstance(res, str) and res.startswith("REDO:"):
+                            try:
+                                # 1-indexed from UI, minus the redo_offset
+                                cycle_to_redo = int(res.split(":")[1]) - 1 - redo_offset
+                                if 0 <= cycle_to_redo < actual_count:
+                                    ctx.update_status(f"Redoing Loop {cycle_to_redo+1}/{actual_count}")
+                                    ctx.set_loop_iteration(cycle_to_redo)
+                                    sub_builder = TestBuilder()
+                                    loop_builder_func(sub_builder, cycle_to_redo)
+                                    for step in sub_builder._steps:
+                                        self._execute_step(ctx, step, hw, min_duration)
+                                else:
+                                    ctx.logger.warning(f"Invalid cycle to redo: {cycle_to_redo+1+redo_offset}")
+                            except ValueError:
+                                ctx.logger.warning(f"Failed to parse REDO command: {res}")
             finally:
                 ctx.pop_loop()
         
@@ -574,17 +583,24 @@ class TestBuilder:
         self._steps.append(step_obj)
         return self
 
-    def wait_for_external_cycles(self, target_cycles: int, threshold_current: float = 0.5):
-        """ Dynamically tracks cycles by monitoring MFM current. """
+    def wait_for_external_cycles(self, target_cycles: Union[int, Callable, str], threshold_current: float = 0.5):
         def action(ctx, hw):
-            ctx.update_status(f"Monitoring external cycles: Target {target_cycles} (Threshold: {threshold_current}A)")
+            import time
+            if callable(target_cycles):
+                actual_target = int(target_cycles(ctx))
+            elif isinstance(target_cycles, str):
+                actual_target = int(ctx.get_runtime_value(target_cycles, 0))
+            else:
+                actual_target = int(target_cycles)
+            
+            ctx.update_status(f"Monitoring external cycles: Target {actual_target} (Threshold: {threshold_current}A)")
             loop_id = id(action)
-            ctx.push_loop(loop_id, target_cycles)
+            ctx.push_loop(loop_id, actual_target)
             try:
                 cycle_count = 0
                 state = "OPEN" # Start assuming switch is open
                 
-                while cycle_count < target_cycles:
+                while cycle_count < actual_target:
                     ctx.check_cancel()
                     ctx.wait_if_paused()
                     

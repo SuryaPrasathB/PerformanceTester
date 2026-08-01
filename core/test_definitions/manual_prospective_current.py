@@ -42,6 +42,7 @@ class ManualProspectiveCurrentTest(BaseTest):
             
             pico = hw.picoscope
             if pico:
+                pico.enable_channel_a = True
                 pico.set_channel_ranges(10, range_idx)
                 pico.trigger_mode = "auto"
                 

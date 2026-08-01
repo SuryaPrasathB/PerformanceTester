@@ -37,7 +37,7 @@ class G6ShortCircuitCurrentTest(BaseTest):
                 # 13. Validate result.
                 pb.custom_action(f"Validate Pre-fusing Result (Iter {pi+1})", lambda ctx, hw, idx=pi: ctx.logger.info(f"Pre-fusing iteration {idx+1} validated."))
 
-            b.loop(3, prefusing_loop)
+            b.loop(3, prefusing_loop, review=False)
 
         # --- First Short Circuit Current Carrying Capacity Test ---
         # 16. Prompt user to select meter category (U2 or U3)
@@ -100,6 +100,7 @@ class G6ShortCircuitCurrentTest(BaseTest):
                 
                 pico = hw.picoscope
                 if pico:
+                    pico.enable_channel_a = True
                     pico.set_channel_ranges(10, range_idx)
                     pico.trigger_mode = "auto"
                     
@@ -207,6 +208,7 @@ class G6ShortCircuitCurrentTest(BaseTest):
                 
                 pico = hw.picoscope
                 if pico:
+                    pico.enable_channel_a = True
                     pico.set_channel_ranges(10, range_idx)
                     pico.trigger_mode = "auto"
                     

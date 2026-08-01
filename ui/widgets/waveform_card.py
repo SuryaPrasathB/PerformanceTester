@@ -1,7 +1,6 @@
 import math
-from PySide6.QtWidgets import QFrame, QVBoxLayout, QHBoxLayout, QLabel, QDialog, QPushButton, QGraphicsDropShadowEffect
+from PySide6.QtWidgets import QFrame, QVBoxLayout, QHBoxLayout, QLabel, QDialog, QPushButton, QGraphicsDropShadowEffect, QGridLayout
 from PySide6.QtCore import Qt, QPoint, Signal, QTimer
-from PySide6.QtGui import QPainter, QColor, QPen, QCursor, QFont
 from PySide6.QtGui import QPainter, QColor, QPen, QCursor, QFont
 
 from ui.widgets.waveform_graph import WaveformGraph
@@ -133,6 +132,7 @@ class WaveformCard(QFrame):
         self.pulse_duration = None
         self.measured_current = None
         self.peak_voltage = None
+        self.voltage_vrms = None
         
         data_a = self.data
         data_b = None
@@ -140,6 +140,13 @@ class WaveformCard(QFrame):
             data_a = self.data[0]
             data_b = self.data[1]
             
+        if data_a:
+            try:
+                from core.waveform_analyzer import calculate_voltage_vrms
+                self.voltage_vrms = calculate_voltage_vrms(data_a)
+            except Exception:
+                pass
+
         if data_b and self.test_id != "g5":
             try:
                 from core.waveform_analyzer import calculate_pulse_duration, calculate_pf_from_duration, calculate_peak_voltage, calculate_measured_current
@@ -197,7 +204,7 @@ class WaveformCard(QFrame):
         try:
             # Instantiate dummy graph to borrow the robust detection logic
             graph = WaveformGraph()
-            graph.set_data(data, timebase, range_val)
+            graph.setData(data, timebase=timebase, range_val=range_val)
             if graph.view_end_time_ms > 0:
                 start_idx = max(0, int(graph.view_start_time_ms / graph.interval_ms))
                 end_idx = min(len(data_a), int(graph.view_end_time_ms / graph.interval_ms))
@@ -212,18 +219,63 @@ class WaveformCard(QFrame):
         self.preview = WaveformPreview(data, start_idx, end_idx, self)
         layout.addWidget(self.preview, stretch=1)
         
-        # PF & Measured Current label below the graph
-        if self.calculated_pf is not None or self.measured_current is not None:
-            text_parts = []
-            if self.calculated_pf is not None:
-                text_parts.append(f"PF: {self.calculated_pf:.2f}")
-            if self.measured_current is not None:
-                text_parts.append(f"Curr: {self.measured_current:.1f}A")
+        # Metrics Table below the graph
+        self.metrics_container = QFrame()
+        self.metrics_container.setStyleSheet("""
+            QFrame {
+                background-color: #FFFFFF;
+                border: 1px solid #E2E8F0;
+                border-radius: 4px;
+            }
+            QLabel {
+                font-size: 11px;
+                color: #334155;
+            }
+        """)
+        metrics_layout = QGridLayout(self.metrics_container)
+        metrics_layout.setContentsMargins(6, 4, 6, 4)
+        metrics_layout.setSpacing(4)
+        
+        row = 0
+        if self.voltage_vrms is not None:
+            lbl_k = QLabel("Voltage:")
+            lbl_k.setStyleSheet("font-weight: bold; color: #64748B;")
+            self.lbl_val_voltage = QLabel(f"{self.voltage_vrms:.1f} Vrms")
+            self.lbl_val_voltage.setStyleSheet("font-weight: bold; color: #0F172A;")
+            metrics_layout.addWidget(lbl_k, row, 0)
+            metrics_layout.addWidget(self.lbl_val_voltage, row, 1, Qt.AlignRight)
+            row += 1
             
-            self.lbl_pf = QLabel(" | ".join(text_parts))
-            self.lbl_pf.setStyleSheet("font-weight: bold; color: #10B981; font-size: 11px;")
-            self.lbl_pf.setAlignment(Qt.AlignCenter)
-            layout.addWidget(self.lbl_pf)
+        if self.measured_current is not None:
+            curr_str = f"{self.measured_current/1000.0:.3f} kA" if self.measured_current >= 1000 else f"{self.measured_current:.1f} A"
+            lbl_k = QLabel("Current:")
+            lbl_k.setStyleSheet("font-weight: bold; color: #64748B;")
+            self.lbl_val_current = QLabel(curr_str)
+            self.lbl_val_current.setStyleSheet("font-weight: bold; color: #0F172A;")
+            metrics_layout.addWidget(lbl_k, row, 0)
+            metrics_layout.addWidget(self.lbl_val_current, row, 1, Qt.AlignRight)
+            row += 1
+            
+        if self.pulse_duration is not None:
+            lbl_k = QLabel("Duration:")
+            lbl_k.setStyleSheet("font-weight: bold; color: #64748B;")
+            self.lbl_val_duration = QLabel(f"{self.pulse_duration:.2f} ms")
+            self.lbl_val_duration.setStyleSheet("font-weight: bold; color: #0F172A;")
+            metrics_layout.addWidget(lbl_k, row, 0)
+            metrics_layout.addWidget(self.lbl_val_duration, row, 1, Qt.AlignRight)
+            row += 1
+            
+        if self.calculated_pf is not None:
+            lbl_k = QLabel("PF:")
+            lbl_k.setStyleSheet("font-weight: bold; color: #64748B;")
+            self.lbl_val_pf = QLabel(f"{self.calculated_pf:.2f}")
+            self.lbl_val_pf.setStyleSheet("font-weight: bold; color: #0F172A;")
+            metrics_layout.addWidget(lbl_k, row, 0)
+            metrics_layout.addWidget(self.lbl_val_pf, row, 1, Qt.AlignRight)
+            row += 1
+            
+        if row > 0:
+            layout.addWidget(self.metrics_container)
 
         # Add Redo Button at the bottom
         from PySide6.QtWidgets import QPushButton
@@ -423,13 +475,25 @@ class WaveformCard(QFrame):
         def save_override():
             pf = graph.get_override_pf()
             curr = graph.get_override_current()
+            dur = graph.get_override_duration()
+            volt = graph.get_override_voltage()
             
-            # Update local UI
+            # Update local UI properties
             self.calculated_pf = pf
             self.measured_current = curr
+            self.pulse_duration = dur
+            self.voltage_vrms = volt
             
-            if hasattr(self, 'lbl_pf'):
-                self.lbl_pf.setText(f"PF: {pf:.2f} | Curr: {curr:.1f}A")
+            # Update tabular labels if they exist
+            if hasattr(self, 'lbl_val_pf'):
+                self.lbl_val_pf.setText(f"{pf:.2f}")
+            if hasattr(self, 'lbl_val_current'):
+                curr_str = f"{curr/1000.0:.3f} kA" if curr >= 1000 else f"{curr:.1f} A"
+                self.lbl_val_current.setText(curr_str)
+            if hasattr(self, 'lbl_val_duration'):
+                self.lbl_val_duration.setText(f"{dur:.2f} ms")
+            if hasattr(self, 'lbl_val_voltage'):
+                self.lbl_val_voltage.setText(f"{volt:.1f} Vrms")
             
             # Update preview zoom
             if graph.view_end_time_ms > 0:
@@ -446,6 +510,8 @@ class WaveformCard(QFrame):
                 'test_id': self.test_id,
                 'pf': pf,
                 'current': curr,
+                'duration': dur,
+                'voltage': volt,
                 'pixmap': pixmap,
                 'name': self.name
             })

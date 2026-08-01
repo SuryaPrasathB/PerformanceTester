@@ -29,6 +29,14 @@ class G3ElectricalEnduranceTest(BaseTest):
     def build(self, builder: TestBuilder):
         # 0. Check Resume State
         def check_resume_state(ctx, hw):
+            target_cycles_str = ctx.prompt_user_action("Enter number of cycles to run [default: 4000]", requires_input=True)
+            try:
+                target_cycles = int(target_cycles_str)
+            except (ValueError, TypeError):
+                target_cycles = 4000
+                
+            ctx.update_runtime_value("g3_target_cycles", target_cycles)
+            
             state = ctx.database_service.get_active_test_state(ctx.meter_serial_number, "g3")
             if state:
                 ans = ctx.prompt_user_action(f"Found interrupted G3 test at Cycle {state['current_cycle']} ({state['stage']}). Resume? (Yes/No)", True)
@@ -42,7 +50,7 @@ class G3ElectricalEnduranceTest(BaseTest):
             
             # Setup dynamic start cycles
             stage = ctx.get_runtime_value("g3_resume_stage", "UPF")
-            ctx.update_runtime_value("g3_upf_start_cycle", ctx.get_runtime_value("g3_resume_cycle", 0) if stage == "UPF" else 4000)
+            ctx.update_runtime_value("g3_upf_start_cycle", ctx.get_runtime_value("g3_resume_cycle", 0) if stage == "UPF" else target_cycles)
             ctx.update_runtime_value("g3_05pf_start_cycle", ctx.get_runtime_value("g3_resume_cycle", 0) if stage == "0.5PF" else 0)
             
         builder.custom_action("Check Resume State", check_resume_state)
@@ -155,10 +163,11 @@ class G3ElectricalEnduranceTest(BaseTest):
                 # 7. Save State every 5 cycles
                 def save_state_action(ctx, hw):
                     current_cycle = i + 1
-                    if current_cycle % 5 == 0 or current_cycle == 4000:
+                    target_cycles = int(ctx.get_runtime_value("g3_target_cycles", 4000))
+                    if current_cycle % 5 == 0 or current_cycle == target_cycles:
                         stage_str = "UPF" if pf == 1.0 else "0.5PF"
                         ctx.database_service.save_test_state(
-                            ctx.meter_serial_number, "g3", current_cycle, 4000, stage_str, "IN_PROGRESS"
+                            ctx.meter_serial_number, "g3", current_cycle, target_cycles, stage_str, "IN_PROGRESS"
                         )
                 b.custom_action("Save State", save_state_action)
                 
@@ -170,10 +179,10 @@ class G3ElectricalEnduranceTest(BaseTest):
 
         def build_external_path(b):
             b.prompt_user("External Mode Detected. Start your external script now.", requires_input=False)
-            b.wait_for_external_cycles(4000, threshold_current=0.5)
+            b.wait_for_external_cycles("g3_target_cycles", threshold_current=0.5)
 
         def build_internal_path_upf(b):
-            b.loop(4000, make_cycles(1.0), start_index_key="g3_upf_start_cycle")
+            b.loop("g3_target_cycles", make_cycles(1.0), start_index_key="g3_upf_start_cycle")
 
         # 4000 Cycles at UPF
         builder.branch_on_condition("UPF Cycles", is_external, build_external_path, build_internal_path_upf)
@@ -184,9 +193,9 @@ class G3ElectricalEnduranceTest(BaseTest):
         builder.start_power_sequence(PLCCoil.CONTACTOR_120A_LOAD_BANK_COIL_ADDR)
         
         def build_internal_path_pf(b):
-            b.loop(4000, make_cycles(0.5), start_index_key="g3_05pf_start_cycle")
+            b.loop("g3_target_cycles", make_cycles(0.5), start_index_key="g3_05pf_start_cycle")
 
-        # 12-15. 4000 Cycles at 0.5 PF
+        # 12-15. Cycles at 0.5 PF
         builder.branch_on_condition("0.5PF Cycles", is_external, build_external_path, build_internal_path_pf)
 
         # Stop Background Process
